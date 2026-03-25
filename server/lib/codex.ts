@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import type { WebSocket } from 'ws'
 
-import { CONSOLE_SCHEMA_PATH, GENERATED_DIR, ROOT_DIR, SCHEMA_PATH, SKILLS_DIR } from './constants.js'
+import { CONSOLE_SCHEMA_PATH, GENERATED_DIR, INTERVIEWER_SCHEMA_PATH, ROOT_DIR, SCHEMA_PATH, SKILLS_DIR } from './constants.js'
 import type { OfferLoomDb } from './db.js'
 import { readLiveContent, trimExcerpt } from './text.js'
 
@@ -77,6 +77,40 @@ export type ConsoleJobStatus = {
   summary: string
 }
 
+export type InterviewerReply = {
+  assessment: string
+  citations: Array<{
+    kind: 'dynamic' | 'guide' | 'question_bank' | 'work'
+    label: string
+    path: string
+  }>
+  follow_ups: string[]
+  headline: string
+  interviewer_markdown: string
+  pressure_level: 'cornering' | 'opening' | 'pressure'
+  pressure_points: string[]
+  summary: string
+}
+
+export type InterviewerJobStatus = {
+  error?: string
+  finishedAt?: string
+  id: string
+  kind: 'interviewer'
+  messagePreview?: string
+  model: string
+  promptPreview?: string
+  questionId: string
+  questionText?: string
+  reasoningEffort: ReasoningEffort
+  result?: InterviewerReply
+  seedFollowUp: string
+  stage: string
+  startedAt: string
+  status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
+  summary: string
+}
+
 type ConsoleOptions = {
   autoReferenceCurrentDoc: boolean
   conversation: ConsoleConversationTurn[]
@@ -87,6 +121,15 @@ type ConsoleOptions = {
   reasoningEffort: ReasoningEffort
   selectedDocumentIds: string[]
   selectedProjectIds: string[]
+}
+
+type InterviewerOptions = {
+  candidateAnswer?: string
+  conversation: ConsoleConversationTurn[]
+  promptOverride?: string
+  questionId: string
+  reasoningEffort: ReasoningEffort
+  seedFollowUp: string
 }
 
 type PromptDocument = Awaited<ReturnType<typeof hydrateDocuments>>[number]
@@ -461,6 +504,177 @@ export class ManagedCodexConsoleManager {
   }
 }
 
+export class InterviewerModeManager {
+  private readonly db: OfferLoomDb
+  private readonly jobs = new Map<string, InterviewerJobStatus>()
+  private readonly running = new Map<string, ChildProcessWithoutNullStreams>()
+
+  constructor(db: OfferLoomDb) {
+    this.db = db
+  }
+
+  getJob(jobId: string) {
+    return this.jobs.get(jobId) ?? null
+  }
+
+  listJobs() {
+    return [...this.jobs.values()].sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+  }
+
+  async start(options: InterviewerOptions) {
+    const jobId = `interviewer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const previewSource = options.candidateAnswer?.trim() || options.seedFollowUp
+    const job: InterviewerJobStatus = {
+      id: jobId,
+      kind: 'interviewer',
+      messagePreview: trimExcerpt(previewSource, 420),
+      model: 'gpt-5.4',
+      promptPreview: undefined,
+      questionId: options.questionId,
+      reasoningEffort: options.reasoningEffort,
+      seedFollowUp: options.seedFollowUp,
+      stage: 'queued',
+      startedAt: new Date().toISOString(),
+      status: 'queued',
+      summary: '等待面试官发问'
+    }
+
+    this.jobs.set(jobId, job)
+    void this.run(jobId, options)
+    return job
+  }
+
+  async restart(jobId: string, promptOverride?: string) {
+    const current = this.jobs.get(jobId)
+    if (!current) {
+      return null
+    }
+
+    return this.start({
+      candidateAnswer: current.messagePreview,
+      conversation: [],
+      promptOverride: promptOverride?.trim() || current.promptPreview,
+      questionId: current.questionId,
+      reasoningEffort: current.reasoningEffort,
+      seedFollowUp: current.seedFollowUp
+    })
+  }
+
+  cancel(jobId: string) {
+    const job = this.jobs.get(jobId)
+    if (!job) {
+      return null
+    }
+    if (job.status === 'ready' || job.status === 'failed' || job.status === 'cancelled') {
+      return job
+    }
+
+    job.status = 'cancelled'
+    job.stage = 'cancelled'
+    job.summary = '面试官回合已取消'
+    job.finishedAt = new Date().toISOString()
+    job.error = '任务已取消'
+
+    const child = this.running.get(jobId)
+    if (child && child.exitCode === null) {
+      child.kill('SIGTERM')
+      setTimeout(() => {
+        if (child.exitCode === null) {
+          child.kill('SIGKILL')
+        }
+      }, 800)
+    }
+
+    return job
+  }
+
+  private async run(jobId: string, options: InterviewerOptions) {
+    const job = this.jobs.get(jobId)
+    if (!job) {
+      return
+    }
+
+    job.status = 'running'
+    job.stage = 'loading_question'
+    job.summary = '读取题目、答案和证据上下文'
+
+    try {
+      const question = this.db.getQuestion(options.questionId)
+      if (!question) {
+        throw new Error('Question not found')
+      }
+      job.questionText = question.text
+
+      job.stage = 'hydrating_context'
+      job.summary = '整理主线锚点与项目证据'
+      const workDocs = await hydrateDocuments(this.db.getDocumentsByIds(
+        question.workMatches
+          .map((match) => match.id)
+          .slice(0, 4)
+      ))
+      const fallbackWorkDocs = await hydrateDocuments(this.db.getDocumentsByIds(
+        question.workHintMatches
+          .map((match) => match.id)
+          .filter((id) => !question.workMatches.some((match) => match.id === id))
+          .slice(0, 3)
+      ))
+      const skillText = await readPromptSkills(['interviewer-pressure.md'])
+
+      job.stage = 'building_prompt'
+      job.summary = '拼装面试官压力面 prompt'
+      const prompt = options.promptOverride?.trim()
+        ? options.promptOverride.trim()
+        : buildInterviewerPrompt(skillText, {
+          candidateAnswer: options.candidateAnswer?.trim() ?? '',
+          conversation: options.conversation,
+          fallbackWorkDocs,
+          question,
+          seedFollowUp: options.seedFollowUp,
+          workDocs
+        })
+      job.promptPreview = prompt
+
+      const outputFile = path.join(os.tmpdir(), `offerloom-interviewer-${job.id}.json`)
+      job.stage = 'running_codex'
+      job.summary = options.candidateAnswer?.trim()
+        ? '面试官正在继续深挖'
+        : '面试官正在进入首轮施压'
+      const raw = await runCodexExec({
+        model: 'gpt-5.4',
+        onSpawn: (child) => {
+          this.running.set(jobId, child)
+        },
+        outputFile,
+        prompt,
+        reasoningEffort: options.reasoningEffort,
+        schemaPath: INTERVIEWER_SCHEMA_PATH
+      })
+      const parsed = JSON.parse(raw) as InterviewerReply
+
+      if (this.jobs.get(jobId)?.status === 'cancelled') {
+        return
+      }
+
+      job.status = 'ready'
+      job.stage = 'ready'
+      job.summary = '面试官回合已返回'
+      job.result = parsed
+      job.finishedAt = new Date().toISOString()
+    } catch (error) {
+      if (this.jobs.get(jobId)?.status === 'cancelled') {
+        return
+      }
+      job.status = 'failed'
+      job.stage = 'failed'
+      job.summary = '面试官模式失败'
+      job.error = error instanceof Error ? error.message : String(error)
+      job.finishedAt = new Date().toISOString()
+    } finally {
+      this.running.delete(jobId)
+    }
+  }
+}
+
 function buildPrompt(
   skillText: string,
   question: NonNullable<ReturnType<OfferLoomDb['getQuestion']>>,
@@ -650,6 +864,139 @@ ${selectedProjectsBlock}
 
 # New User Message
 ${input.message}
+
+# Output contract
+Return JSON only. It must match the provided schema exactly.`
+}
+
+function buildInterviewerPrompt(
+  skillText: string,
+  input: {
+    candidateAnswer: string
+    conversation: ConsoleConversationTurn[]
+    fallbackWorkDocs: PromptDocument[]
+    question: NonNullable<ReturnType<OfferLoomDb['getQuestion']>>
+    seedFollowUp: string
+    workDocs: PromptDocument[]
+  }
+) {
+  const question = input.question
+  const localizedQuestion = typeof (question.metadata as { translatedText?: unknown })?.translatedText === 'string'
+    && String((question.metadata as { translatedText?: string }).translatedText).trim()
+      ? String((question.metadata as { translatedText?: string }).translatedText).trim()
+      : null
+
+  const guideBlock = question.guideMatches.length > 0
+    ? question.guideMatches.slice(0, 4).map((match, index) => `## Guide Anchor ${index + 1}
+Label: ${match.documentTitle} / ${match.heading}
+Path: ${match.path}
+Excerpt:
+${trimExcerpt(match.content, 1800)}`).join('\n\n')
+    : 'No linked guide anchors were found.'
+
+  const workBlock = question.workMatches.length > 0
+    ? question.workMatches.slice(0, 3).map((match, index) => {
+        const workDoc = input.workDocs.find((item) => item.id === match.id)
+        return `## Direct Work Evidence ${index + 1}
+Label: ${match.title}
+Path: ${match.path}
+Score: ${match.score}
+Evidence: ${formatRetrievalEvidence(match.meta.retrievalEvidence as Record<string, unknown> | undefined)}
+Excerpt:
+${trimExcerpt(workDoc?.content ?? '', 1600)}`
+      }).join('\n\n')
+    : 'No direct work evidence was found.'
+
+  const fallbackWorkBlock = question.workHintMatches.length > 0
+    ? question.workHintMatches.slice(0, 3).map((match, index) => {
+        const workDoc = input.fallbackWorkDocs.find((item) => item.id === match.id)
+        return `## Adjacent Work Evidence ${index + 1}
+Label: ${match.title}
+Path: ${match.path}
+Score: ${match.score}
+Evidence: ${formatRetrievalEvidence(match.meta.retrievalEvidence as Record<string, unknown> | undefined)}
+Excerpt:
+${trimExcerpt(workDoc?.content ?? '', 1500)}`
+      }).join('\n\n')
+    : 'No adjacent work evidence was inspected.'
+
+  const generated = question.generated?.output as {
+    citations?: Array<{ kind?: string; label?: string; path?: string }>
+    elevator_pitch?: string
+    follow_ups?: string[]
+    full_answer_markdown?: string
+    knowledge_map?: Array<{ concept?: string; why_it_matters?: string }>
+    work_evidence_note?: string
+    work_evidence_status?: string
+    work_story?: string
+  } | null
+
+  const answerPackageBlock = generated
+    ? `## Candidate Prepared Answer Package
+20-second Opening:
+${generated.elevator_pitch ?? 'N/A'}
+
+Work Evidence Status:
+${generated.work_evidence_status ?? 'N/A'}
+
+Work Evidence Note:
+${generated.work_evidence_note ?? 'N/A'}
+
+Work Story:
+${generated.work_story ?? 'N/A'}
+
+Knowledge Map:
+${generated.knowledge_map?.map((item) => `- ${item.concept ?? 'concept'}: ${item.why_it_matters ?? ''}`).join('\n') || '- None'}
+
+Full Answer:
+${trimExcerpt(generated.full_answer_markdown ?? '', 3200)}`
+    : 'No generated answer package is available yet.'
+
+  const historyBlock = input.conversation.length > 0
+    ? input.conversation
+      .slice(-10)
+      .map((item, index) => `## ${item.role === 'user' ? 'Candidate' : 'Interviewer'} ${index + 1}
+${trimExcerpt(item.content, 1800)}`)
+      .join('\n\n')
+    : 'No prior conversation.'
+
+  const latestCandidateBlock = input.candidateAnswer.trim()
+    ? input.candidateAnswer.trim()
+    : 'No candidate answer yet. Start the interview round by asking the first sharp question.'
+
+  return `${skillText}
+
+# Interview Context
+Original Question: ${question.text}
+Preferred Chinese phrasing: ${localizedQuestion ?? 'N/A'}
+Question Type: ${question.questionType}
+Difficulty: ${question.difficulty}
+Source: ${question.sourceTitle}
+Source Path: ${question.sourcePath}
+
+# Seed Follow-up To Start From
+${input.seedFollowUp}
+
+# Guide Anchors
+${guideBlock}
+
+# Work Evidence Status
+${question.workEvidenceStatus}
+
+# Direct Work Evidence
+${workBlock}
+
+# Adjacent Work Evidence
+${fallbackWorkBlock}
+
+# Prepared Answer Package
+${answerPackageBlock}
+
+# Conversation So Far
+${historyBlock}
+
+# Latest Candidate Answer
+${latestCandidateBlock}
 
 # Output contract
 Return JSON only. It must match the provided schema exactly.`

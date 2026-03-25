@@ -3,6 +3,7 @@ import type {
   CodexConsoleJob,
   DocumentData,
   DocumentListItem,
+  InterviewerJob,
   InterviewImportPayload,
   InterviewImportResult,
   IndexJobStatus,
@@ -132,6 +133,29 @@ export function fetchCodexConsoleJob(jobId: string) {
 
 export function cancelCodexConsoleJob(jobId: string) {
   return request<CodexConsoleJob>(`/api/codex-console/jobs/${jobId}/cancel`, {
+    method: 'POST'
+  })
+}
+
+export function startInterviewerJob(body: {
+  candidateAnswer?: string
+  conversation: Array<{ content: string; role: 'assistant' | 'user' }>
+  questionId: string
+  reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh'
+  seedFollowUp: string
+}) {
+  return request<InterviewerJob>('/api/interviewer/jobs', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export function fetchInterviewerJob(jobId: string) {
+  return request<InterviewerJob>(`/api/interviewer/jobs/${jobId}`)
+}
+
+export function cancelInterviewerJob(jobId: string) {
+  return request<InterviewerJob>(`/api/interviewer/jobs/${jobId}/cancel`, {
     method: 'POST'
   })
 }

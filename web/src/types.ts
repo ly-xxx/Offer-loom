@@ -189,6 +189,21 @@ export type QuestionDetail = {
   workMatches: WorkMatch[]
 }
 
+export type InterviewerReply = {
+  assessment: string
+  citations: Array<{
+    kind: 'dynamic' | 'guide' | 'question_bank' | 'work'
+    label: string
+    path: string
+  }>
+  follow_ups: string[]
+  headline: string
+  interviewer_markdown: string
+  pressure_level: 'cornering' | 'opening' | 'pressure'
+  pressure_points: string[]
+  summary: string
+}
+
 export type DocumentSection = {
   anchor: string
   content: string
@@ -348,6 +363,25 @@ export type CodexConsoleJob = {
   summary?: string
 }
 
+export type InterviewerJob = {
+  error?: string
+  finishedAt?: string
+  id: string
+  kind?: 'interviewer'
+  messagePreview?: string
+  model: string
+  promptPreview?: string
+  questionId: string
+  questionText?: string
+  reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh'
+  result?: InterviewerReply
+  seedFollowUp: string
+  stage?: string
+  startedAt: string
+  status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
+  summary?: string
+}
+
 export type IndexJobStatus = {
   configSummary?: {
     guideCount: number
@@ -366,4 +400,8 @@ export type IndexJobStatus = {
   summary: string
 }
 
-export type AgentJob = (JobStatus & { kind: 'answer' }) | (CodexConsoleJob & { kind: 'console' }) | IndexJobStatus
+export type AgentJob =
+  | (JobStatus & { kind: 'answer' })
+  | (CodexConsoleJob & { kind: 'console' })
+  | (InterviewerJob & { kind: 'interviewer' })
+  | IndexJobStatus

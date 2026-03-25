@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OfferLoomInterviewerModeReply",
+  "type": "object",
+  "required": [
+    "pressure_level",
+    "headline",
+    "summary",
+    "assessment",
+    "interviewer_markdown",
+    "pressure_points",
+    "citations",
+    "follow_ups"
+  ],
+  "properties": {
+    "pressure_level": {
+      "type": "string",
+      "enum": [
+        "opening",
+        "pressure",
+        "cornering"
+      ]
+    },
+    "headline": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "assessment": {
+      "type": "string"
+    },
+    "interviewer_markdown": {
+      "type": "string"
+    },
+    "pressure_points": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "path",
+          "kind"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "guide",
+              "question_bank",
+              "work",
+              "dynamic"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "follow_ups": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

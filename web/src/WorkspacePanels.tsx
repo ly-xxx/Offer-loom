@@ -55,7 +55,7 @@ export function SettingsDrawer(props: {
   const draft = props.draftConfig
 
   return (
-    <Drawer icon={<Settings2 size={18} />} onClose={props.onClose} open={props.open} title="设置">
+    <OverlayDrawer icon={<Settings2 size={18} />} onClose={props.onClose} open={props.open} title="设置">
       {!draft || !props.settings ? (
         <div className="control-empty">正在载入来源配置…</div>
       ) : (
@@ -222,7 +222,7 @@ export function SettingsDrawer(props: {
           )}
         </div>
       )}
-    </Drawer>
+    </OverlayDrawer>
   )
 }
 
@@ -241,7 +241,7 @@ export function JobsDrawer(props: {
   const history = props.jobs.filter((job) => job.status !== 'queued' && job.status !== 'running')
 
   return (
-    <Drawer icon={<Bot size={18} />} onClose={props.onClose} open={props.open} title="任务">
+    <OverlayDrawer icon={<Bot size={18} />} onClose={props.onClose} open={props.open} title="任务">
       <div className="control-panel-body two-column">
         <section className="control-card">
           <div className="control-card-head">
@@ -370,7 +370,7 @@ export function JobsDrawer(props: {
           )}
         </section>
       </div>
-    </Drawer>
+    </OverlayDrawer>
   )
 }
 
@@ -448,7 +448,7 @@ export function FirstRunDialog(props: {
   )
 }
 
-function Drawer(props: DrawerProps) {
+export function OverlayDrawer(props: DrawerProps) {
   return (
     <AnimatePresence initial={false}>
       {props.open && (
@@ -686,6 +686,9 @@ function describeJobKind(kind: AgentJob['kind']) {
   if (kind === 'index') {
     return '索引'
   }
+  if (kind === 'interviewer') {
+    return '面试官'
+  }
   if (kind === 'console') {
     return '控制台'
   }
@@ -712,6 +715,9 @@ function readJobTitle(job: AgentJob) {
   if (job.kind === 'index') {
     return '重建知识索引'
   }
+  if (job.kind === 'interviewer') {
+    return job.questionText?.trim() || job.seedFollowUp || '压力面'
+  }
   if (job.kind === 'console') {
     return job.messagePreview?.trim() || '受管 Codex 会话'
   }
@@ -721,6 +727,9 @@ function readJobTitle(job: AgentJob) {
 function readJobSummary(job: AgentJob) {
   if (job.kind === 'index') {
     return job.summary
+  }
+  if (job.kind === 'interviewer') {
+    return job.summary ?? job.seedFollowUp ?? '面试官压力面任务'
   }
   if (job.kind === 'console') {
     return job.summary ?? job.messagePreview ?? '受管控制台任务'

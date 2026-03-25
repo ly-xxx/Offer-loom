@@ -8,7 +8,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import express from 'express'
 import { WebSocketServer } from 'ws'
 
-import { AnswerJobManager, ManagedCodexConsoleManager, attachCodexPty } from './lib/codex.js'
+import { AnswerJobManager, InterviewerModeManager, ManagedCodexConsoleManager, attachCodexPty } from './lib/codex.js'
 import { IndexJobManager } from './lib/indexer.js'
 import { saveManualInterviewImport } from './lib/interviewImports.js'
 import { PORT, WEB_DIST_DIR } from './lib/constants.js'
@@ -19,6 +19,7 @@ const app = express()
 const db = new OfferLoomDb()
 const jobManager = new AnswerJobManager(db)
 const consoleManager = new ManagedCodexConsoleManager(db)
+const interviewerManager = new InterviewerModeManager(db)
 const indexManager = new IndexJobManager(db)
 
 app.use(express.json({ limit: '12mb' }))
@@ -162,6 +163,15 @@ app.get('/api/index/jobs/:jobId', (request, response) => {
   response.json(job)
 })
 
+app.get('/api/interviewer/jobs/:jobId', (request, response) => {
+  const job = interviewerManager.getJob(request.params.jobId)
+  if (!job) {
+    response.status(404).json({ error: 'Job not found' })
+    return
+  }
+  response.json(job)
+})
+
 app.post('/api/index/jobs', async (request, response) => {
   const body = request.body as { config?: OfferLoomSourcesConfig }
   const job = await indexManager.start({
@@ -172,6 +182,52 @@ app.post('/api/index/jobs', async (request, response) => {
 
 app.post('/api/index/jobs/:jobId/cancel', (request, response) => {
   const job = indexManager.cancel(request.params.jobId)
+  if (!job) {
+    response.status(404).json({ error: 'Job not found' })
+    return
+  }
+  response.json(job)
+})
+
+app.post('/api/interviewer/jobs', async (request, response) => {
+  const body = request.body as {
+    candidateAnswer?: string
+    conversation?: Array<{ content?: string; role?: 'assistant' | 'user' }>
+    questionId?: string
+    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+    seedFollowUp?: string
+  }
+
+  if (!body.questionId) {
+    response.status(400).json({ error: 'questionId is required' })
+    return
+  }
+  if (!body.seedFollowUp?.trim()) {
+    response.status(400).json({ error: 'seedFollowUp is required' })
+    return
+  }
+
+  const job = await interviewerManager.start({
+    candidateAnswer: body.candidateAnswer?.trim() ?? '',
+    conversation: Array.isArray(body.conversation)
+      ? body.conversation
+        .filter((item) => item.role === 'assistant' || item.role === 'user')
+        .map((item) => ({
+          content: String(item.content ?? ''),
+          role: item.role as 'assistant' | 'user'
+        }))
+      : [],
+    promptOverride: undefined,
+    questionId: body.questionId,
+    reasoningEffort: body.reasoningEffort ?? 'high',
+    seedFollowUp: body.seedFollowUp.trim()
+  })
+
+  response.status(202).json(job)
+})
+
+app.post('/api/interviewer/jobs/:jobId/cancel', (request, response) => {
+  const job = interviewerManager.cancel(request.params.jobId)
   if (!job) {
     response.status(404).json({ error: 'Job not found' })
     return
@@ -272,6 +328,7 @@ app.get('/api/agents/jobs', (_request, response) => {
   response.json(sortJobs([
     ...jobManager.listJobs(),
     ...consoleManager.listJobs(),
+    ...interviewerManager.listJobs(),
     ...indexManager.listJobs()
   ]))
 })
@@ -279,6 +336,7 @@ app.get('/api/agents/jobs', (_request, response) => {
 app.get('/api/agents/jobs/:jobId', (request, response) => {
   const job = jobManager.getJob(request.params.jobId)
     ?? consoleManager.getJob(request.params.jobId)
+    ?? interviewerManager.getJob(request.params.jobId)
     ?? indexManager.getJob(request.params.jobId)
   if (!job) {
     response.status(404).json({ error: 'Job not found' })
@@ -290,6 +348,7 @@ app.get('/api/agents/jobs/:jobId', (request, response) => {
 app.post('/api/agents/jobs/:jobId/cancel', (request, response) => {
   const job = jobManager.cancel(request.params.jobId)
     ?? consoleManager.cancel(request.params.jobId)
+    ?? interviewerManager.cancel(request.params.jobId)
     ?? indexManager.cancel(request.params.jobId)
 
   if (!job) {
@@ -303,6 +362,7 @@ app.post('/api/agents/jobs/:jobId/rerun', async (request, response) => {
   const body = request.body as { promptOverride?: string }
   const job = await jobManager.restart(request.params.jobId, body.promptOverride)
     ?? await consoleManager.restart(request.params.jobId, body.promptOverride)
+    ?? await interviewerManager.restart(request.params.jobId, body.promptOverride)
 
   if (!job) {
     response.status(404).json({ error: 'Job not found or cannot be rerun' })

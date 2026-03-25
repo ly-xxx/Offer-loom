@@ -68,6 +68,7 @@ import type {
   WorkProject
 } from './types'
 import { FloatingCodexWindow } from './CodexConsole'
+import { InterviewerModeDrawer } from './InterviewerMode'
 import { InterviewImportModal } from './InterviewImportModal'
 import { FirstRunDialog, JobsDrawer, SettingsDrawer } from './WorkspacePanels'
 import './App.css'
@@ -147,6 +148,12 @@ type InterviewStageSectionSpec = {
   kicker: string
 }
 type SelectionUpdateSource = 'navigation' | 'scroll'
+type InterviewerSession = {
+  questionId: string
+  questionTitle: string
+  seedFollowUp: string
+  sessionKey: string
+}
 
 const UI_STATE_STORAGE_KEY = 'offerloom.workspace-ui.v1'
 const DOC_SCROLL_STORAGE_KEY = 'offerloom.doc-scroll.v1'
@@ -295,6 +302,7 @@ function App() {
   const [model, setModel] = useState('gpt-5.4')
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('high')
   const [answerEffort, setAnswerEffort] = useState<'low' | 'high' | 'xhigh'>('high')
+  const [interviewerEffort, setInterviewerEffort] = useState<ReasoningEffort>('high')
   const [autoReferenceCurrentDoc, setAutoReferenceCurrentDoc] = useState(true)
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<string[]>([])
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
@@ -310,6 +318,7 @@ function App() {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [activeIndexJobId, setActiveIndexJobId] = useState<string | null>(null)
+  const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null)
   const [workspaceUi, setWorkspaceUi] = useState<WorkspaceUiState>(() => readWorkspaceUiState())
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [expandedGuideKeys, setExpandedGuideKeys] = useState<string[]>([])
@@ -1655,6 +1664,16 @@ function App() {
     }
   })
 
+  const openInterviewerMode = useEffectEvent((questionId: string, seedFollowUp: string, questionTitle?: string | null) => {
+    const cached = questionCache[questionId]
+    setInterviewerSession({
+      questionId,
+      questionTitle: questionTitle?.trim() || cached?.displayText || cached?.text || questionId,
+      seedFollowUp,
+      sessionKey: `${questionId}:${Date.now()}`
+    })
+  })
+
   const saveCurrentSourcesConfig = useEffectEvent(async () => {
     if (!draftSourcesConfig) {
       return
@@ -2093,6 +2112,7 @@ function App() {
                         knowledgeAnchor: match.anchor
                       })
                     }}
+                    onOpenInterviewerMode={openInterviewerMode}
                     onOpenWorkMatch={(match) => {
                       openDocument(match.id, undefined, { tab: 'mywork' })
                     }}
@@ -2178,6 +2198,7 @@ function App() {
         jobs={questionJobs}
         onClose={() => setKnowledgeAnchor(null)}
         onOpenDocument={(documentId, tab) => openDocument(documentId, undefined, { tab })}
+        onOpenInterviewerMode={openInterviewerMode}
         onGenerate={generateAnswerForQuestion}
         onSelectAnswerEffort={setAnswerEffort}
         questionCache={questionCache}
@@ -2199,6 +2220,15 @@ function App() {
         selectedProjectIds={selectedProjectIds}
         selectedReferenceIds={selectedReferenceIds}
         workProjects={workProjects}
+      />
+
+      <InterviewerModeDrawer
+        onClose={() => setInterviewerSession(null)}
+        onReasoningEffortChange={setInterviewerEffort}
+        open={Boolean(interviewerSession)}
+        reasoningEffort={interviewerEffort}
+        reasoningEfforts={(meta?.reasoningEfforts ?? ['low', 'medium', 'high', 'xhigh']) as ReasoningEffort[]}
+        session={interviewerSession}
       />
 
       <SettingsDrawer
@@ -2575,6 +2605,32 @@ function QuestionTitle(props: { displayText?: string | null; text: string }) {
   )
 }
 
+function FollowUpInterviewerList(props: {
+  items: string[]
+  onOpenInterviewerMode: (questionId: string, followUp: string, questionTitle?: string | null) => void
+  questionId: string
+  questionTitle?: string | null
+}) {
+  return (
+    <div className="answer-bullet-list follow-up-drill-list">
+      {props.items.map((item) => (
+        <div key={`${props.questionId}-${item}`} className="answer-bullet-item follow-up-drill-item">
+          <span>{item}</span>
+          <button
+            aria-label="进入面试官模式"
+            className="follow-up-drill-button"
+            onClick={() => props.onOpenInterviewerMode(props.questionId, item, props.questionTitle)}
+            title="面试官模式"
+            type="button"
+          >
+            <BrainCircuit size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function GuidePresenceBadge(props: {
   compact?: boolean
   exactCount: number
@@ -2692,6 +2748,7 @@ function KnowledgePanel(props: {
   jobs: QuestionJobMap
   onClose: () => void
   onOpenDocument: (documentId: string, tab?: SidebarTab) => void
+  onOpenInterviewerMode: (questionId: string, followUp: string, questionTitle?: string | null) => void
   onGenerate: (questionId: string) => Promise<void> | void
   onSelectAnswerEffort: (effort: 'low' | 'high' | 'xhigh') => void
   questionCache: CachedQuestionMap
@@ -2872,11 +2929,12 @@ function KnowledgePanel(props: {
                             {generated.follow_ups && generated.follow_ups.length > 0 && (
                               <div className="answer-card answer-list-card">
                                 <span>下一轮高概率追问</span>
-                                <div className="answer-bullet-list">
-                                  {generated.follow_ups.map((item) => (
-                                    <div key={`${question.id}-follow-${item}`} className="answer-bullet-item">{item}</div>
-                                  ))}
-                                </div>
+                                <FollowUpInterviewerList
+                                  items={generated.follow_ups}
+                                  onOpenInterviewerMode={props.onOpenInterviewerMode}
+                                  questionId={question.id}
+                                  questionTitle={question.displayText}
+                                />
                               </div>
                             )}
 
@@ -3043,11 +3101,12 @@ function KnowledgePanel(props: {
                                   {generated.follow_ups && generated.follow_ups.length > 0 && (
                                     <div className="answer-card answer-list-card">
                                       <span>下一轮高概率追问</span>
-                                      <div className="answer-bullet-list">
-                                        {generated.follow_ups.map((item) => (
-                                          <div key={`${question.id}-follow-${item}`} className="answer-bullet-item">{item}</div>
-                                        ))}
-                                      </div>
+                                      <FollowUpInterviewerList
+                                        items={generated.follow_ups}
+                                        onOpenInterviewerMode={props.onOpenInterviewerMode}
+                                        questionId={question.id}
+                                        questionTitle={question.displayText}
+                                      />
                                     </div>
                                   )}
 
@@ -3098,6 +3157,7 @@ function InterviewQuestionStage(props: {
   onGenerate: (questionId: string) => Promise<void> | void
   onOpenGuideFallback: (match: QuestionDetail['guideFallbackMatches'][number]) => void
   onOpenGuideMatch: (match: QuestionDetail['guideMatches'][number]) => void
+  onOpenInterviewerMode: (questionId: string, followUp: string, questionTitle?: string | null) => void
   onOpenWorkMatch: (match: QuestionDetail['workMatches'][number] | QuestionDetail['workHintMatches'][number]) => void
   onSelectAnswerEffort: (effort: 'low' | 'high' | 'xhigh') => void
   paneId: string
@@ -3307,11 +3367,12 @@ function InterviewQuestionStage(props: {
             <span>{section.kicker}</span>
             <strong>{section.heading}</strong>
           </div>
-          <div className="answer-bullet-list">
-            {generated.follow_ups.map((item) => (
-              <div key={`${props.question.id}-${item}`} className="answer-bullet-item">{item}</div>
-            ))}
-          </div>
+          <FollowUpInterviewerList
+            items={generated.follow_ups}
+            onOpenInterviewerMode={props.onOpenInterviewerMode}
+            questionId={props.question.id}
+            questionTitle={props.question.displayText}
+          />
         </>
       )
     }

@@ -6,7 +6,7 @@ import {
   type ChangeEvent,
   type DragEvent
 } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import {
   Building2,
   CalendarDays,
@@ -15,11 +15,11 @@ import {
   LoaderCircle,
   ScanText,
   Sparkles,
-  UserRoundSearch,
-  X
+  UserRoundSearch
 } from 'lucide-react'
 
 import type { InterviewImportPayload } from './types'
+import { OverlayDrawer } from './WorkspacePanels'
 
 type Props = {
   busy: boolean
@@ -164,45 +164,25 @@ export function InterviewImportModal(props: Props) {
   return (
     <AnimatePresence initial={false}>
       {props.open && (
-        <>
-          <motion.button
-            aria-label="关闭面经导入弹窗"
-            className="overlay-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => {
-              if (!props.busy) {
-                resetState()
-                props.onClose()
-              }
-            }}
-          />
-
-          <motion.section
-            className="interview-import-modal"
-            initial={{ opacity: 0, scale: 0.98, y: 14 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 12 }}
-          >
-            <div className="interview-import-head">
-              <div>
-                <strong>添加面经</strong>
-                <p>贴文本或贴截图，存成可索引的新面经源。</p>
+        <OverlayDrawer
+          icon={<ScanText size={18} />}
+          onClose={() => {
+            if (!props.busy) {
+              resetState()
+              props.onClose()
+            }
+          }}
+          open={props.open}
+          title="添加面经"
+        >
+          <div className="control-panel-body interview-import-body">
+            <section className="control-card">
+              <div className="control-card-head">
+                <div>
+                  <strong>添加面经</strong>
+                  <p>贴文本或贴截图，存成可索引的新面经源。</p>
+                </div>
               </div>
-
-              <button
-                className="ghost-button icon-button"
-                onClick={() => {
-                  if (!props.busy) {
-                    resetState()
-                    props.onClose()
-                  }
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
 
             <div className="import-method-row">
               <button
@@ -335,8 +315,9 @@ export function InterviewImportModal(props: Props) {
                 {props.busy ? '保存中…' : '保存并更新索引'}
               </button>
             </div>
-          </motion.section>
-        </>
+            </section>
+          </div>
+        </OverlayDrawer>
       )}
     </AnimatePresence>
   )
