@@ -23,7 +23,10 @@ import type {
 } from './types'
 
 type DrawerProps = {
+  className?: string
   children: ReactNode
+  description?: ReactNode
+  headerActions?: ReactNode
   icon?: ReactNode
   onClose: () => void
   open: boolean
@@ -459,22 +462,32 @@ export function OverlayDrawer(props: DrawerProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             onClick={props.onClose}
           />
           <motion.aside
-            className="control-drawer"
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
+            className={`control-drawer${props.className ? ` ${props.className}` : ''}`}
+            initial={{ opacity: 0, x: 34, scale: 0.986 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 28, scale: 0.992 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 30, mass: 0.92 }}
           >
             <div className="control-drawer-head">
-              <div className="drawer-head-title">
-                {props.icon}
-                <strong>{props.title}</strong>
+              <div className="drawer-head-copy">
+                <div className="drawer-head-title">
+                  {props.icon}
+                  <strong>{props.title}</strong>
+                </div>
+                {props.description ? (
+                  <p className="drawer-head-description">{props.description}</p>
+                ) : null}
               </div>
-              <button className="ghost-button icon-button" onClick={props.onClose}>
-                <X size={16} />
-              </button>
+              <div className="drawer-head-actions">
+                {props.headerActions}
+                <button className="ghost-button icon-button" onClick={props.onClose}>
+                  <X size={16} />
+                </button>
+              </div>
             </div>
             {props.children}
           </motion.aside>

@@ -28,8 +28,7 @@ import {
   Plus,
   Search,
   Settings2,
-  Sparkles,
-  X
+  Sparkles
 } from 'lucide-react'
 
 import {
@@ -70,7 +69,7 @@ import type {
 import { FloatingCodexWindow } from './CodexConsole'
 import { InterviewerModeDrawer } from './InterviewerMode'
 import { InterviewImportModal } from './InterviewImportModal'
-import { FirstRunDialog, JobsDrawer, SettingsDrawer } from './WorkspacePanels'
+import { FirstRunDialog, JobsDrawer, OverlayDrawer, SettingsDrawer } from './WorkspacePanels'
 import './App.css'
 
 type CachedQuestionMap = Record<string, QuestionDetail>
@@ -2762,391 +2761,371 @@ function KnowledgePanel(props: {
   return (
     <AnimatePresence initial={false}>
       {props.activeSection && (
-        <>
-          <motion.button
-            aria-label="Close knowledge panel"
-            className="knowledge-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={props.onClose}
-          />
-
-          <motion.aside
-            className="knowledge-panel"
-            initial={{ opacity: 0, x: 28, y: 10 }}
-            animate={{ opacity: 1, x: 0, y: 0 }}
-            exit={{ opacity: 0, x: 32, y: 0 }}
-            transition={{ duration: 0.22 }}
-          >
-            <div className="knowledge-panel-header">
-              <div>
-                <h2>{props.activeSection.heading}</h2>
-                <p>题目、证据和可直接开口的回答都收在这里。</p>
-              </div>
-
-              <div className="knowledge-panel-actions">
-                <div className="segmented-effort">
-                  {(['low', 'high', 'xhigh'] as const).map((item) => (
-                    <button
-                      key={item}
-                      className={item === props.answerEffort ? 'active' : ''}
-                      onClick={() => props.onSelectAnswerEffort(item)}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-
-                <button className="ghost-button icon-button" onClick={props.onClose}>
-                  <X size={16} />
-                </button>
+        <OverlayDrawer
+          className="knowledge-drawer"
+          description="题目、证据和可直接开口的回答都收在这里。"
+          headerActions={(
+            <div className="knowledge-drawer-actions">
+              <div className="segmented-effort">
+                {(['low', 'high', 'xhigh'] as const).map((item) => (
+                  <button
+                    key={item}
+                    className={item === props.answerEffort ? 'active' : ''}
+                    onClick={() => props.onSelectAnswerEffort(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
               </div>
             </div>
+          )}
+          icon={<BrainCircuit size={18} />}
+          onClose={props.onClose}
+          open={Boolean(props.activeSection)}
+          title={props.activeSection.heading}
+        >
+          <div className="knowledge-panel-body">
+            {freshQuestions.map((question, index) => {
+              const detail = props.questionCache[question.id]
+              const generated = detail?.generated?.output ?? question.generated
+              const job = props.jobs[question.id]
+              const isGenerating = props.generatingQuestionId === question.id
 
-            <div className="knowledge-panel-body">
-              {freshQuestions.map((question, index) => {
-                const detail = props.questionCache[question.id]
-                const generated = detail?.generated?.output ?? question.generated
-                const job = props.jobs[question.id]
-                const isGenerating = props.generatingQuestionId === question.id
-
-                return (
-                  <article key={question.id} className="question-drill-card">
-                    <div className="question-drill-top">
-                      <span className="footnote-index">[{index + 1}]</span>
-                      <div className="question-drill-title">
-                        <QuestionTitle displayText={question.displayText} text={question.text} />
-                        <div className="footnote-meta">
-                          <span className="pill subtle">{question.questionType}</span>
-                          <span className="pill subtle">{question.difficulty}</span>
-                          <span className={`pill ${generated ? 'success' : ''}`}>
-                            {generated ? '已生成' : '待生成'}
-                          </span>
-                        </div>
+              return (
+                <article key={question.id} className="question-drill-card">
+                  <div className="question-drill-top">
+                    <span className="footnote-index">[{index + 1}]</span>
+                    <div className="question-drill-title">
+                      <QuestionTitle displayText={question.displayText} text={question.text} />
+                      <div className="footnote-meta">
+                        <span className="pill subtle">{question.questionType}</span>
+                        <span className="pill subtle">{question.difficulty}</span>
+                        <span className={`pill ${generated ? 'success' : ''}`}>
+                          {generated ? '已生成' : '待生成'}
+                        </span>
                       </div>
                     </div>
+                  </div>
 
-                    {job && (
-                      <div className={`job-banner ${job.status}`}>
-                        <strong>任务状态：{job.status}</strong>
-                        <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
-                      </div>
-                    )}
+                  {job && (
+                    <div className={`job-banner ${job.status}`}>
+                      <strong>任务状态：{job.status}</strong>
+                      <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
+                    </div>
+                  )}
 
-                    {generated ? (
-                      <div className="question-answer-stack">
-                        {generated.elevator_pitch && (
-                          <div className="answer-card micro-answer">
-                            <span>20 秒开场</span>
-                            <p>{generated.elevator_pitch}</p>
+                  {generated ? (
+                    <div className="question-answer-stack">
+                      {generated.elevator_pitch && (
+                        <div className="answer-card micro-answer">
+                          <span>20 秒开场</span>
+                          <p>{generated.elevator_pitch}</p>
+                        </div>
+                      )}
+
+                      {(generated.work_evidence_status || generated.work_evidence_note) && (
+                        <div className="answer-card micro-answer">
+                          <span>项目依据</span>
+                          <div className="grounding-meta-row">
+                            {generated.work_evidence_status && (
+                              <span className={`pill grounding-${generated.work_evidence_status}`}>
+                                {describeWorkEvidenceStatus(generated.work_evidence_status)}
+                              </span>
+                            )}
+                            {generated.work_evidence_note && <p>{generated.work_evidence_note}</p>}
                           </div>
-                        )}
+                        </div>
+                      )}
 
-                        {(generated.work_evidence_status || generated.work_evidence_note) && (
-                          <div className="answer-card micro-answer">
-                            <span>项目依据</span>
-                            <div className="grounding-meta-row">
-                              {generated.work_evidence_status && (
-                                <span className={`pill grounding-${generated.work_evidence_status}`}>
-                                  {describeWorkEvidenceStatus(generated.work_evidence_status)}
-                                </span>
-                              )}
-                              {generated.work_evidence_note && <p>{generated.work_evidence_note}</p>}
-                            </div>
+                      {generated.work_story && (
+                        <div className="answer-card micro-answer">
+                          <span>项目切入</span>
+                          <p>{generated.work_story}</p>
+                        </div>
+                      )}
+
+                      {generated.full_answer_markdown && (
+                        <div className="question-answer-markdown chat-answer">
+                          <MarkdownRenderer>{generated.full_answer_markdown}</MarkdownRenderer>
+                        </div>
+                      )}
+
+                      {generated.knowledge_map && generated.knowledge_map.length > 0 && (
+                        <div className="answer-card answer-grid-card">
+                          <span>知识骨架</span>
+                          <div className="knowledge-map-grid">
+                            {generated.knowledge_map.map((item) => (
+                              <div key={`${question.id}-${item.concept}`} className="knowledge-map-chip">
+                                <strong>{item.concept}</strong>
+                                <small>{item.why_it_matters}</small>
+                                <span className={`pill confidence-${item.confidence}`}>{item.confidence}</span>
+                              </div>
+                            ))}
                           </div>
-                        )}
+                        </div>
+                      )}
 
-                        {generated.work_story && (
-                          <div className="answer-card micro-answer">
-                            <span>项目切入</span>
-                            <p>{generated.work_story}</p>
+                      {generated.missing_basics && generated.missing_basics.length > 0 && (
+                        <div className="answer-card answer-list-card">
+                          <span>需要顺手补的基础点</span>
+                          <div className="answer-bullet-list">
+                            {generated.missing_basics.map((item) => (
+                              <div key={`${question.id}-${item}`} className="answer-bullet-item">{item}</div>
+                            ))}
                           </div>
-                        )}
+                        </div>
+                      )}
 
-                        {generated.full_answer_markdown && (
-                          <div className="question-answer-markdown chat-answer">
-                            <MarkdownRenderer>{generated.full_answer_markdown}</MarkdownRenderer>
-                          </div>
-                        )}
-
-                        {generated.knowledge_map && generated.knowledge_map.length > 0 && (
-                          <div className="answer-card answer-grid-card">
-                            <span>知识骨架</span>
-                            <div className="knowledge-map-grid">
-                              {generated.knowledge_map.map((item) => (
-                                <div key={`${question.id}-${item.concept}`} className="knowledge-map-chip">
-                                  <strong>{item.concept}</strong>
-                                  <small>{item.why_it_matters}</small>
-                                  <span className={`pill confidence-${item.confidence}`}>{item.confidence}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {generated.missing_basics && generated.missing_basics.length > 0 && (
-                          <div className="answer-card answer-list-card">
-                            <span>需要顺手补的基础点</span>
-                            <div className="answer-bullet-list">
-                              {generated.missing_basics.map((item) => (
-                                <div key={`${question.id}-${item}`} className="answer-bullet-item">{item}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {detail && (
-                          <>
-                            <div className="answer-card question-grounding">
-                              <span>项目引用</span>
-                              {detail.workMatches.length > 0 ? (
+                      {detail && (
+                        <>
+                          <div className="answer-card question-grounding">
+                            <span>项目引用</span>
+                            {detail.workMatches.length > 0 ? (
+                              <div className="grounding-list">
+                                {detail.workMatches.slice(0, 3).map((item) => (
+                                  <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
+                                    <strong>{item.title}</strong>
+                                    <small>{item.path}</small>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : detail.workHintMatches.length > 0 ? (
+                              <>
+                                <p className="muted-copy">没有直接项目证据，已回源检查相邻材料，只能作为贴边表达，不能当成同题直证。</p>
                                 <div className="grounding-list">
-                                  {detail.workMatches.slice(0, 3).map((item) => (
+                                  {detail.workHintMatches.slice(0, 3).map((item) => (
                                     <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
                                       <strong>{item.title}</strong>
                                       <small>{item.path}</small>
                                     </button>
                                   ))}
                                 </div>
-                              ) : detail.workHintMatches.length > 0 ? (
-                                <>
-                                  <p className="muted-copy">没有直接项目证据，已回源检查相邻材料，只能作为贴边表达，不能当成同题直证。</p>
-                                  <div className="grounding-list">
-                                    {detail.workHintMatches.slice(0, 3).map((item) => (
-                                      <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
-                                        <strong>{item.title}</strong>
-                                        <small>{item.path}</small>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </>
-                              ) : (
-                                <p className="muted-copy">当前 `mywork` 里没有足够强的直接项目证据，这道题会以主线知识为主，不硬贴经历。</p>
-                              )}
-                            </div>
+                              </>
+                            ) : (
+                              <p className="muted-copy">当前 `mywork` 里没有足够强的直接项目证据，这道题会以主线知识为主，不硬贴经历。</p>
+                            )}
+                          </div>
 
-                            {generated.follow_ups && generated.follow_ups.length > 0 && (
-                              <div className="answer-card answer-list-card">
-                                <span>下一轮高概率追问</span>
-                                <FollowUpInterviewerList
-                                  items={generated.follow_ups}
-                                  onOpenInterviewerMode={props.onOpenInterviewerMode}
-                                  questionId={question.id}
-                                  questionTitle={question.displayText}
-                                />
+                          {generated.follow_ups && generated.follow_ups.length > 0 && (
+                            <div className="answer-card answer-list-card">
+                              <span>下一轮高概率追问</span>
+                              <FollowUpInterviewerList
+                                items={generated.follow_ups}
+                                onOpenInterviewerMode={props.onOpenInterviewerMode}
+                                questionId={question.id}
+                                questionTitle={question.displayText}
+                              />
+                            </div>
+                          )}
+
+                          {detail.generated?.citations && detail.generated.citations.length > 0 && (
+                            <div className="answer-card answer-list-card">
+                              <span>引用回溯</span>
+                              <div className="citation-list">
+                                {detail.generated.citations.map((item, citationIndex) => (
+                                  <div key={`${question.id}-cite-${citationIndex}`} className="citation-chip">
+                                    <strong>{item.label}</strong>
+                                    <small>{item.path}</small>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="question-answer-stack">
+                      <p className="muted-copy">
+                        这个题目还没有现成答案。你可以直接按当前章节为上下文现场生成，这样输出会自然引用当前知识点。
+                      </p>
+                      <button
+                        className="primary-button"
+                        disabled={isGenerating}
+                        onClick={() => void props.onGenerate(question.id)}
+                      >
+                        <Sparkles size={16} />
+                        {isGenerating ? '生成中…' : '生成个性化答案'}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              )
+            })}
+
+            {revisitedQuestions.length > 0 && (
+              <details className="revisited-group" open={false}>
+                <summary>前面已经出现过的题目 {revisitedQuestions.length} 条</summary>
+                <div className="revisited-group-body">
+                  {revisitedQuestions.map((question) => {
+                    const detail = props.questionCache[question.id]
+                    const generated = detail?.generated?.output ?? question.generated
+                    const job = props.jobs[question.id]
+                    const isGenerating = props.generatingQuestionId === question.id
+
+                    return (
+                      <article key={question.id} className="question-drill-card revisited-card">
+                        <div className="question-drill-top">
+                          <span className="footnote-index">↺</span>
+                          <div className="question-drill-title">
+                            <QuestionTitle displayText={question.displayText} text={question.text} />
+                            <div className="footnote-meta">
+                              <span className="pill subtle">{question.questionType}</span>
+                              <span className="pill subtle">{question.difficulty}</span>
+                              <span className={`pill ${generated ? 'success' : ''}`}>
+                                {generated ? '已生成' : '待生成'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {job && (
+                          <div className={`job-banner ${job.status}`}>
+                            <strong>任务状态：{job.status}</strong>
+                            <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
+                          </div>
+                        )}
+
+                        {generated ? (
+                          <div className="question-answer-stack">
+                            {(generated.work_evidence_status || generated.work_evidence_note) && (
+                              <div className="answer-card micro-answer">
+                                <span>项目依据</span>
+                                <div className="grounding-meta-row">
+                                  {generated.work_evidence_status && (
+                                    <span className={`pill grounding-${generated.work_evidence_status}`}>
+                                      {describeWorkEvidenceStatus(generated.work_evidence_status)}
+                                    </span>
+                                  )}
+                                  {generated.work_evidence_note && <p>{generated.work_evidence_note}</p>}
+                                </div>
                               </div>
                             )}
 
-                            {detail.generated?.citations && detail.generated.citations.length > 0 && (
-                              <div className="answer-card answer-list-card">
-                                <span>引用回溯</span>
-                                <div className="citation-list">
-                                  {detail.generated.citations.map((item, citationIndex) => (
-                                    <div key={`${question.id}-cite-${citationIndex}`} className="citation-chip">
-                                      <strong>{item.label}</strong>
-                                      <small>{item.path}</small>
+                            {generated.elevator_pitch && (
+                              <div className="answer-card micro-answer">
+                                <span>20 秒开场</span>
+                                <p>{generated.elevator_pitch}</p>
+                              </div>
+                            )}
+
+                            {generated.work_story && (
+                              <div className="answer-card micro-answer">
+                                <span>项目切入</span>
+                                <p>{generated.work_story}</p>
+                              </div>
+                            )}
+
+                            {generated.full_answer_markdown && (
+                              <div className="question-answer-markdown chat-answer">
+                                <MarkdownRenderer>{generated.full_answer_markdown}</MarkdownRenderer>
+                              </div>
+                            )}
+
+                            {generated.knowledge_map && generated.knowledge_map.length > 0 && (
+                              <div className="answer-card answer-grid-card">
+                                <span>知识骨架</span>
+                                <div className="knowledge-map-grid">
+                                  {generated.knowledge_map.map((item) => (
+                                    <div key={`${question.id}-${item.concept}`} className="knowledge-map-chip">
+                                      <strong>{item.concept}</strong>
+                                      <small>{item.why_it_matters}</small>
+                                      <span className={`pill confidence-${item.confidence}`}>{item.confidence}</span>
                                     </div>
                                   ))}
                                 </div>
                               </div>
                             )}
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="question-answer-stack">
-                        <p className="muted-copy">
-                          这个题目还没有现成答案。你可以直接按当前章节为上下文现场生成，这样输出会自然引用当前知识点。
-                        </p>
-                        <button
-                          className="primary-button"
-                          disabled={isGenerating}
-                          onClick={() => void props.onGenerate(question.id)}
-                        >
-                          <Sparkles size={16} />
-                          {isGenerating ? '生成中…' : '生成个性化答案'}
-                        </button>
-                      </div>
-                    )}
-                  </article>
-                )
-              })}
 
-              {revisitedQuestions.length > 0 && (
-                <details className="revisited-group" open={false}>
-                  <summary>前面已经出现过的题目 {revisitedQuestions.length} 条</summary>
-                  <div className="revisited-group-body">
-                    {revisitedQuestions.map((question) => {
-                      const detail = props.questionCache[question.id]
-                      const generated = detail?.generated?.output ?? question.generated
-                      const job = props.jobs[question.id]
-                      const isGenerating = props.generatingQuestionId === question.id
-
-                      return (
-                        <article key={question.id} className="question-drill-card revisited-card">
-                          <div className="question-drill-top">
-                            <span className="footnote-index">↺</span>
-                            <div className="question-drill-title">
-                              <QuestionTitle displayText={question.displayText} text={question.text} />
-                              <div className="footnote-meta">
-                                <span className="pill subtle">{question.questionType}</span>
-                                <span className="pill subtle">{question.difficulty}</span>
-                                <span className={`pill ${generated ? 'success' : ''}`}>
-                                  {generated ? '已生成' : '待生成'}
-                                </span>
+                            {generated.missing_basics && generated.missing_basics.length > 0 && (
+                              <div className="answer-card answer-list-card">
+                                <span>需要顺手补的基础点</span>
+                                <div className="answer-bullet-list">
+                                  {generated.missing_basics.map((item) => (
+                                    <div key={`${question.id}-${item}`} className="answer-bullet-item">{item}</div>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          </div>
+                            )}
 
-                          {job && (
-                            <div className={`job-banner ${job.status}`}>
-                              <strong>任务状态：{job.status}</strong>
-                              <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
-                            </div>
-                          )}
-
-                          {generated ? (
-                            <div className="question-answer-stack">
-                              {(generated.work_evidence_status || generated.work_evidence_note) && (
-                                <div className="answer-card micro-answer">
-                                  <span>项目依据</span>
-                                  <div className="grounding-meta-row">
-                                    {generated.work_evidence_status && (
-                                      <span className={`pill grounding-${generated.work_evidence_status}`}>
-                                        {describeWorkEvidenceStatus(generated.work_evidence_status)}
-                                      </span>
-                                    )}
-                                    {generated.work_evidence_note && <p>{generated.work_evidence_note}</p>}
-                                  </div>
-                                </div>
-                              )}
-
-                              {generated.elevator_pitch && (
-                                <div className="answer-card micro-answer">
-                                  <span>20 秒开场</span>
-                                  <p>{generated.elevator_pitch}</p>
-                                </div>
-                              )}
-
-                              {generated.work_story && (
-                                <div className="answer-card micro-answer">
-                                  <span>项目切入</span>
-                                  <p>{generated.work_story}</p>
-                                </div>
-                              )}
-
-                              {generated.full_answer_markdown && (
-                                <div className="question-answer-markdown chat-answer">
-                                  <MarkdownRenderer>{generated.full_answer_markdown}</MarkdownRenderer>
-                                </div>
-                              )}
-
-                              {generated.knowledge_map && generated.knowledge_map.length > 0 && (
-                                <div className="answer-card answer-grid-card">
-                                  <span>知识骨架</span>
-                                  <div className="knowledge-map-grid">
-                                    {generated.knowledge_map.map((item) => (
-                                      <div key={`${question.id}-${item.concept}`} className="knowledge-map-chip">
-                                        <strong>{item.concept}</strong>
-                                        <small>{item.why_it_matters}</small>
-                                        <span className={`pill confidence-${item.confidence}`}>{item.confidence}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {generated.missing_basics && generated.missing_basics.length > 0 && (
-                                <div className="answer-card answer-list-card">
-                                  <span>需要顺手补的基础点</span>
-                                  <div className="answer-bullet-list">
-                                    {generated.missing_basics.map((item) => (
-                                      <div key={`${question.id}-${item}`} className="answer-bullet-item">{item}</div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {detail && (
-                                <>
-                                  <div className="answer-card question-grounding">
-                                    <span>项目引用</span>
-                                    {detail.workMatches.length > 0 ? (
+                            {detail && (
+                              <>
+                                <div className="answer-card question-grounding">
+                                  <span>项目引用</span>
+                                  {detail.workMatches.length > 0 ? (
+                                    <div className="grounding-list">
+                                      {detail.workMatches.slice(0, 3).map((item) => (
+                                        <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
+                                          <strong>{item.title}</strong>
+                                          <small>{item.path}</small>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : detail.workHintMatches.length > 0 ? (
+                                    <>
+                                      <p className="muted-copy">没有直接项目证据，已回源检查相邻材料，只能作为贴边表达，不能当成同题直证。</p>
                                       <div className="grounding-list">
-                                        {detail.workMatches.slice(0, 3).map((item) => (
+                                        {detail.workHintMatches.slice(0, 3).map((item) => (
                                           <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
                                             <strong>{item.title}</strong>
                                             <small>{item.path}</small>
                                           </button>
                                         ))}
                                       </div>
-                                    ) : detail.workHintMatches.length > 0 ? (
-                                      <>
-                                        <p className="muted-copy">没有直接项目证据，已回源检查相邻材料，只能作为贴边表达，不能当成同题直证。</p>
-                                        <div className="grounding-list">
-                                          {detail.workHintMatches.slice(0, 3).map((item) => (
-                                            <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
-                                              <strong>{item.title}</strong>
-                                              <small>{item.path}</small>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <p className="muted-copy">当前 `mywork` 里没有足够强的直接项目证据，这道题会以主线知识为主，不硬贴经历。</p>
-                                    )}
+                                    </>
+                                  ) : (
+                                    <p className="muted-copy">当前 `mywork` 里没有足够强的直接项目证据，这道题会以主线知识为主，不硬贴经历。</p>
+                                  )}
+                                </div>
+
+                                {generated.follow_ups && generated.follow_ups.length > 0 && (
+                                  <div className="answer-card answer-list-card">
+                                    <span>下一轮高概率追问</span>
+                                    <FollowUpInterviewerList
+                                      items={generated.follow_ups}
+                                      onOpenInterviewerMode={props.onOpenInterviewerMode}
+                                      questionId={question.id}
+                                      questionTitle={question.displayText}
+                                    />
                                   </div>
+                                )}
 
-                                  {generated.follow_ups && generated.follow_ups.length > 0 && (
-                                    <div className="answer-card answer-list-card">
-                                      <span>下一轮高概率追问</span>
-                                      <FollowUpInterviewerList
-                                        items={generated.follow_ups}
-                                        onOpenInterviewerMode={props.onOpenInterviewerMode}
-                                        questionId={question.id}
-                                        questionTitle={question.displayText}
-                                      />
+                                {detail.generated?.citations && detail.generated.citations.length > 0 && (
+                                  <div className="answer-card answer-list-card">
+                                    <span>引用回溯</span>
+                                    <div className="citation-list">
+                                      {detail.generated.citations.map((item, citationIndex) => (
+                                        <div key={`${question.id}-cite-${citationIndex}`} className="citation-chip">
+                                          <strong>{item.label}</strong>
+                                          <small>{item.path}</small>
+                                        </div>
+                                      ))}
                                     </div>
-                                  )}
-
-                                  {detail.generated?.citations && detail.generated.citations.length > 0 && (
-                                    <div className="answer-card answer-list-card">
-                                      <span>引用回溯</span>
-                                      <div className="citation-list">
-                                        {detail.generated.citations.map((item, citationIndex) => (
-                                          <div key={`${question.id}-cite-${citationIndex}`} className="citation-chip">
-                                            <strong>{item.label}</strong>
-                                            <small>{item.path}</small>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="question-answer-stack">
-                              <button
-                                className="primary-button"
-                                disabled={isGenerating}
-                                onClick={() => void props.onGenerate(question.id)}
-                              >
-                                <Sparkles size={16} />
-                                {isGenerating ? '生成中…' : '生成个性化答案'}
-                              </button>
-                            </div>
-                          )}
-                        </article>
-                      )
-                    })}
-                  </div>
-                </details>
-              )}
-            </div>
-          </motion.aside>
-        </>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="question-answer-stack">
+                            <button
+                              className="primary-button"
+                              disabled={isGenerating}
+                              onClick={() => void props.onGenerate(question.id)}
+                            >
+                              <Sparkles size={16} />
+                              {isGenerating ? '生成中…' : '生成个性化答案'}
+                            </button>
+                          </div>
+                        )}
+                      </article>
+                    )
+                  })}
+                </div>
+              </details>
+            )}
+          </div>
+        </OverlayDrawer>
       )}
     </AnimatePresence>
   )
