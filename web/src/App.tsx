@@ -51,6 +51,7 @@ import {
   startAnswerGeneration,
   startIndexJob
 } from './api'
+import { normalizeMarkdownForRender } from './markdown'
 import type {
   AgentJob,
   DocumentData,
@@ -2558,7 +2559,7 @@ function MarkdownRenderer(props: { children: string }) {
       rehypePlugins={[rehypeKatex]}
       remarkPlugins={[remarkGfm, remarkMath]}
     >
-      {props.children}
+      {normalizeMarkdownForRender(props.children)}
     </ReactMarkdown>
   )
 }

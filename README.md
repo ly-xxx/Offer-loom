@@ -1,5 +1,7 @@
 # OfferLoom
 
+[English README](./README.en.md)
+
 OfferLoom 是一个把“主线学习文档 + 面经题库 + 个人工作材料”织成同一条学习链路的面试准备工作台。
 
 它的核心思路不是把题库平铺出来，而是：
@@ -259,15 +261,33 @@ OfferLoom 对 `mywork` 不是“见到文件就全吃”，而是保守扫描：
 
 - [docs/TECHNICAL_REPORT.md](./docs/TECHNICAL_REPORT.md)
   检索、匹配、RAG 设计、生成策略与 UI 结构说明
+- [docs/TECHNICAL_REPORT.en.md](./docs/TECHNICAL_REPORT.en.md)
+  English technical report for GitHub readers
 - [docs/SOURCES.md](./docs/SOURCES.md)
   仓库内置公开示例源及其上游地址
+- [docs/SOURCES.en.md](./docs/SOURCES.en.md)
+  English source list and attribution notes
 - [docs/MYWORK.md](./docs/MYWORK.md)
   `mywork` 目录组织建议
+- [docs/MYWORK.en.md](./docs/MYWORK.en.md)
+  English guide for organizing `mywork`
 - [docs/CONFIGURATION.md](./docs/CONFIGURATION.md)
   来源配置与运行时覆盖
+- [docs/CONFIGURATION.en.md](./docs/CONFIGURATION.en.md)
+  English configuration guide
 - [docs/RELEASE.md](./docs/RELEASE.md)
   发布检查单
+- [docs/RELEASE.en.md](./docs/RELEASE.en.md)
+  English release checklist
 - [docs/PRIVACY.md](./docs/PRIVACY.md)
   隐私边界
+- [docs/PRIVACY.en.md](./docs/PRIVACY.en.md)
+  English privacy and data-handling notes
 - [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
   常见问题排查
+- [docs/TROUBLESHOOTING.en.md](./docs/TROUBLESHOOTING.en.md)
+  English troubleshooting notes
+- [docs/CLI_AGENT.md](./docs/CLI_AGENT.md)
+  Embedded CLI agent runtime notes
+- [docs/CLI_AGENT.en.md](./docs/CLI_AGENT.en.md)
+  English embedded CLI agent notes

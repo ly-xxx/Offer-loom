@@ -111,7 +111,7 @@ OfferLoom 不再只看“有几个关键词重合”，而是额外引入了：
 例如：
 
 - 一个只是在机器人 README 里出现了 `prompt` 示例的文档，不应该自动成为 prompt engineering 题的 direct evidence
-- 一个 `CellAgent` 式的 LLM multi-agent 项目，虽然不一定直接覆盖 prompt tuning，但可以作为 prompt / agent 方向的 adjacent evidence
+- 一个通用的 LLM multi-agent 项目，虽然不一定直接覆盖 prompt tuning，但可以作为 prompt / agent 方向的 adjacent evidence
 
 ## 5. 为什么不强迫每道题都结合项目
 

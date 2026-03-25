@@ -7,7 +7,8 @@ import { readLiveContent, splitIntoSections } from './text.js'
 type JsonRecord = Record<string, unknown>
 const QUESTION_FINGERPRINT_STOPWORDS = new Set([
   'a', 'an', 'and', 'are', 'between', 'does', 'difference', 'different', 'do', 'explain', 'how',
-  'in', 'is', 'it', 'its', 'of', 'the', 'their', 'them', 'to', 'used', 'what', 'where', 'why'
+  'during', 'e', 'eg', 'example', 'for', 'g', 'in', 'is', 'it', 'its', 'of', 'the', 'their',
+  'them', 'to', 'used', 'what', 'where', 'why'
 ])
 
 export type DocumentListItem = {
@@ -173,7 +174,7 @@ export class OfferLoomDb {
       sourceRelPath: string
     }>
 
-    return rows.map(({ metadataJson, sourceRelPath, ...item }) => {
+    const mapped = rows.map(({ metadataJson, sourceRelPath, ...item }) => {
       const metadata = safeJson(metadataJson) as Record<string, unknown>
       const translatedText = readTranslatedText(metadata)
       const category = readPrimaryCategory(metadata)
@@ -192,6 +193,8 @@ export class OfferLoomDb {
         translatedText
       }
     })
+
+    return dedupeQuestionListItems(mapped)
   }
 
   getQuestion(questionId: string) {
@@ -536,10 +539,21 @@ export class OfferLoomDb {
     const liveContent = await readLiveContent(filePath, row.content)
     const liveSections = splitIntoSections(documentBase.title, liveContent)
     const fallbackOrderIndex = liveSections.length + 1
-    const looseRelatedQuestions = looseQuestions.map((item) => {
+    const looseRelatedQuestions = looseQuestions.reduce<Array<{
+      difficulty: string
+      displayText: string
+      generated: JsonRecord | null
+      generatedStatus: string | null
+      id: string
+      isRevisited: boolean
+      questionType: string
+      score: number
+      text: string
+      translatedText: string | null
+    }>>((bucket, item) => {
       const metadata = safeJson(item.metadataJson) as Record<string, unknown>
       const translatedText = readTranslatedText(metadata)
-      return {
+      return upsertQuestionBucket(bucket, {
         displayText: translatedText ?? item.text,
         id: item.questionId,
         isRevisited: hasQuestionAppearedEarlier(
@@ -553,8 +567,8 @@ export class OfferLoomDb {
         score: item.score,
         generatedStatus: item.generatedStatus,
         generated: item.generatedOutputJson ? safeObject(item.generatedOutputJson) : null
-      }
-    })
+      })
+    }, [])
 
     return {
       ...documentBase,
@@ -972,7 +986,11 @@ function upsertQuestionBucket(
   }
 ) {
   const fingerprint = buildQuestionFingerprint(candidate.text)
-  const existingIndex = bucket.findIndex((item) => buildQuestionFingerprint(item.text) === fingerprint)
+  const existingIndex = bucket.findIndex((item) => {
+    const existingFingerprint = buildQuestionFingerprint(item.text)
+    return existingFingerprint === fingerprint
+      || areQuestionFingerprintsNearDuplicate(existingFingerprint, fingerprint)
+  })
 
   if (existingIndex === -1) {
     return [...bucket, candidate]
@@ -992,20 +1010,7 @@ function upsertQuestionBucket(
 }
 
 function buildQuestionFingerprint(text: string) {
-  const tokens = text
-    .toLowerCase()
-    .replace(/^[\s📌✅⭐❓🔥👉]+/u, '')
-    .replace(/^q\s*\d+\s*[:：.\-]\s*/i, '')
-    .replace(/^\|\s*q\s*\d+\s*\|\s*/i, '')
-    .replace(/\|\s*\[answer\]\([^)]*\)\s*\|?/ig, '')
-    .replace(/\btransformer model\b/g, 'transformer')
-    .replace(/\btransformers\b/g, 'transformer')
-    .replace(/\bmodels\b/g, 'model')
-    .replace(/\bllms\b/g, 'llm')
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ')
-    .split(/\s+/)
-    .map((token) => normalizeQuestionFingerprintToken(token))
-    .filter((token) => token && !QUESTION_FINGERPRINT_STOPWORDS.has(token))
+  const tokens = tokenizeQuestionFingerprint(text)
 
   return [...new Set(tokens)]
     .sort((left, right) => left.localeCompare(right, 'en'))
@@ -1013,7 +1018,32 @@ function buildQuestionFingerprint(text: string) {
     .trim()
 }
 
+function tokenizeQuestionFingerprint(text: string) {
+  return sanitizeQuestionFingerprintText(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ')
+    .split(/\s+/)
+    .map((token) => normalizeQuestionFingerprintToken(token))
+    .filter((token) => token && !QUESTION_FINGERPRINT_STOPWORDS.has(token))
+}
+
+function sanitizeQuestionFingerprintText(text: string) {
+  return text
+    .replace(/^[\s📌✅⭐❓🔥👉]+/u, '')
+    .replace(/^q\s*\d+\s*[:：.\-]\s*/i, '')
+    .replace(/^\|\s*q\s*\d+\s*\|\s*/i, '')
+    .replace(/\|\s*\[answer\]\([^)]*\)\s*\|?/ig, '')
+    .replace(/[（(][^()（）]{0,120}(?:e\.?\s*g\.?|for example|for instance|例如|比如)[^()（）]{0,120}[)）]/ig, ' ')
+    .replace(/\btransformer model\b/g, 'transformer')
+    .replace(/\btransformers\b/g, 'transformer')
+    .replace(/\bmodels\b/g, 'model')
+    .replace(/\bllms\b/g, 'llm')
+}
+
 function normalizeQuestionFingerprintToken(token: string) {
+  if (token.length === 1 && /^[a-z]$/i.test(token)) {
+    return ''
+  }
   if (!token || !/^[a-z0-9]+$/.test(token)) {
     return token
   }
@@ -1035,6 +1065,71 @@ function normalizeQuestionFingerprintToken(token: string) {
   }
 
   return token
+}
+
+function areQuestionFingerprintsNearDuplicate(left: string, right: string) {
+  if (!left || !right) {
+    return false
+  }
+  if (left === right) {
+    return true
+  }
+
+  const leftTokens = left.split(/\s+/).filter(Boolean)
+  const rightTokens = right.split(/\s+/).filter(Boolean)
+  if (leftTokens.length === 0 || rightTokens.length === 0) {
+    return false
+  }
+
+  const leftSet = new Set(leftTokens)
+  const rightSet = new Set(rightTokens)
+  let overlap = 0
+  for (const token of leftSet) {
+    if (rightSet.has(token)) {
+      overlap += 1
+    }
+  }
+
+  const shorter = Math.min(leftSet.size, rightSet.size)
+  const union = new Set([...leftSet, ...rightSet]).size
+  const shorterCoverage = overlap / shorter
+  const jaccard = overlap / union
+
+  return overlap >= 4 && shorterCoverage >= 0.9 && jaccard >= 0.72
+}
+
+function dedupeQuestionListItems(items: QuestionListItem[]) {
+  const deduped: QuestionListItem[] = []
+
+  for (const item of items) {
+    const fingerprint = buildQuestionFingerprint(item.text)
+    const existingIndex = deduped.findIndex((current) => {
+      const existingFingerprint = buildQuestionFingerprint(current.text)
+      return existingFingerprint === fingerprint
+        || areQuestionFingerprintsNearDuplicate(existingFingerprint, fingerprint)
+    })
+
+    if (existingIndex === -1) {
+      deduped.push(item)
+      continue
+    }
+
+    if (compareQuestionListItems(item, deduped[existingIndex]) < 0) {
+      deduped[existingIndex] = item
+    }
+  }
+
+  return deduped
+}
+
+function compareQuestionListItems(left: QuestionListItem, right: QuestionListItem) {
+  const leftReady = left.generatedStatus === 'ready' ? 1 : 0
+  const rightReady = right.generatedStatus === 'ready' ? 1 : 0
+  return rightReady - leftReady
+    || right.guideLinkCount - left.guideLinkCount
+    || right.guideFallbackCount - left.guideFallbackCount
+    || right.workLinkCount - left.workLinkCount
+    || left.displayText.localeCompare(right.displayText, 'zh-Hans-CN')
 }
 
 function hasQuestionAppearedEarlier(

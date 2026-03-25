@@ -28,6 +28,7 @@ import {
   fetchCodexConsoleJob,
   startCodexConsoleJob
 } from './api'
+import { normalizeMarkdownForRender } from './markdown'
 import type {
   CodexConsoleJob,
   CodexConsoleReply,
@@ -498,7 +499,7 @@ export function FloatingCodexWindow(props: Props) {
                 <label className="console-search-shell">
                   <FolderSearch size={16} />
                   <input
-                    placeholder="搜索具体文档，例如 README / transformer / cellagent"
+                    placeholder="搜索具体文档，例如 README / transformer / rag"
                     value={referenceQuery}
                     onChange={(event) => setReferenceQuery(event.target.value)}
                   />
@@ -677,7 +678,7 @@ function AssistantReplyCard(props: { reply: CodexConsoleReply }) {
 
       <div className="console-markdown">
         <ReactMarkdown rehypePlugins={[rehypeKatex]} remarkPlugins={[remarkGfm, remarkMath]}>
-          {props.reply.reply_markdown}
+          {normalizeMarkdownForRender(props.reply.reply_markdown)}
         </ReactMarkdown>
       </div>
 

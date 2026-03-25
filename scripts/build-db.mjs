@@ -35,7 +35,8 @@ import {
 
 const QUESTION_FINGERPRINT_STOPWORDS = new Set([
   'a', 'an', 'and', 'are', 'between', 'does', 'difference', 'different', 'do', 'explain', 'how',
-  'in', 'is', 'it', 'its', 'of', 'the', 'their', 'them', 'to', 'used', 'what', 'where', 'why'
+  'during', 'e', 'eg', 'example', 'for', 'g', 'in', 'is', 'it', 'its', 'of', 'the', 'their',
+  'them', 'to', 'used', 'what', 'where', 'why'
 ])
 
 async function main() {
@@ -117,6 +118,7 @@ async function main() {
   let translatedQuestionCount = 0
   const seenQuestionCanonicals = new Set()
   const seenQuestionFingerprints = new Set()
+  const seenQuestionFingerprintList = []
 
   for (const source of sources) {
     const rootPath = resolveSourcePath(source)
@@ -223,15 +225,19 @@ async function main() {
             || seenQuestionCanonicals.has(canonicalText)
             || (questionFingerprint && seenQuestionFingerprints.has(questionFingerprint))
             || (translatedFingerprint && seenQuestionFingerprints.has(translatedFingerprint))
+            || (questionFingerprint && seenQuestionFingerprintList.some((item) => areQuestionFingerprintsNearDuplicate(item, questionFingerprint)))
+            || (translatedFingerprint && seenQuestionFingerprintList.some((item) => areQuestionFingerprintsNearDuplicate(item, translatedFingerprint)))
           ) {
             return
           }
           seenQuestionCanonicals.add(canonicalText)
           if (questionFingerprint) {
             seenQuestionFingerprints.add(questionFingerprint)
+            seenQuestionFingerprintList.push(questionFingerprint)
           }
           if (translatedFingerprint) {
             seenQuestionFingerprints.add(translatedFingerprint)
+            seenQuestionFingerprintList.push(translatedFingerprint)
           }
           const classification = classifyInterviewQuestion({
             documentTitle: normalized.title,
@@ -1925,8 +1931,8 @@ const DOMAIN_FAMILIES = [
   {
     name: 'science_analysis',
     group: 'science',
-    questionKeywords: ['cellagent', 'single-cell', 'scrna', 'spatial transcriptomics', 'omics', 'bioinformatics', '单细胞', '空间转录组', '生物信息'],
-    candidateKeywords: ['cellagent', 'single-cell', 'scrna', 'spatial transcriptomics', 'omics', 'bioinformatics', '单细胞', '空间转录组', '生物信息']
+    questionKeywords: ['single-cell', 'scrna', 'spatial transcriptomics', 'omics', 'bioinformatics', '单细胞', '空间转录组', '生物信息'],
+    candidateKeywords: ['single-cell', 'scrna', 'spatial transcriptomics', 'omics', 'bioinformatics', '单细胞', '空间转录组', '生物信息']
   }
 ]
 
@@ -1967,7 +1973,7 @@ const STRICT_DIRECT_FAMILY_RULES = {
     minCandidateHits: 1
   },
   science_analysis: {
-    candidateKeywords: ['cellagent', 'single-cell', 'scrna', 'spatial transcriptomics', 'omics', 'bioinformatics', '单细胞', '空间转录组', '生物信息'],
+    candidateKeywords: ['single-cell', 'scrna', 'spatial transcriptomics', 'omics', 'bioinformatics', '单细胞', '空间转录组', '生物信息'],
     minCandidateHits: 1
   }
 }
@@ -2502,20 +2508,7 @@ function scoreWorkChunkGrounding(questionText, chunk, domainScore = 0) {
 }
 
 function buildQuestionFingerprint(text) {
-  const tokens = text
-    .toLowerCase()
-    .replace(/^[\s📌✅⭐❓🔥👉]+/u, '')
-    .replace(/^q\s*\d+\s*[:：.\-]\s*/i, '')
-    .replace(/^\|\s*q\s*\d+\s*\|\s*/i, '')
-    .replace(/\|\s*\[answer\]\([^)]*\)\s*\|?/ig, '')
-    .replace(/\btransformer model\b/g, 'transformer')
-    .replace(/\btransformers\b/g, 'transformer')
-    .replace(/\bmodels\b/g, 'model')
-    .replace(/\bllms\b/g, 'llm')
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ')
-    .split(/\s+/)
-    .map((token) => normalizeFingerprintToken(token))
-    .filter((token) => token && !QUESTION_FINGERPRINT_STOPWORDS.has(token))
+  const tokens = tokenizeQuestionFingerprint(text)
 
   return [...new Set(tokens)]
     .sort((left, right) => left.localeCompare(right, 'en'))
@@ -2523,8 +2516,34 @@ function buildQuestionFingerprint(text) {
     .trim()
 }
 
+function tokenizeQuestionFingerprint(text) {
+  return sanitizeQuestionFingerprintText(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ')
+    .split(/\s+/)
+    .map((token) => normalizeFingerprintToken(token))
+    .filter((token) => token && !QUESTION_FINGERPRINT_STOPWORDS.has(token))
+}
+
+function sanitizeQuestionFingerprintText(text) {
+  return text
+    .replace(/^[\s📌✅⭐❓🔥👉]+/u, '')
+    .replace(/^q\s*\d+\s*[:：.\-]\s*/i, '')
+    .replace(/^\|\s*q\s*\d+\s*\|\s*/i, '')
+    .replace(/\|\s*\[answer\]\([^)]*\)\s*\|?/ig, '')
+    .replace(/[（(][^()（）]{0,120}(?:e\.?\s*g\.?|for example|for instance|例如|比如)[^()（）]{0,120}[)）]/ig, ' ')
+    .replace(/\btransformer model\b/g, 'transformer')
+    .replace(/\btransformers\b/g, 'transformer')
+    .replace(/\bmodels\b/g, 'model')
+    .replace(/\bllms\b/g, 'llm')
+}
+
 function normalizeFingerprintToken(token) {
   if (!token) {
+    return ''
+  }
+
+  if (token.length === 1 && /^[a-z]$/i.test(token)) {
     return ''
   }
 
@@ -2549,6 +2568,37 @@ function normalizeFingerprintToken(token) {
   }
 
   return token
+}
+
+function areQuestionFingerprintsNearDuplicate(left, right) {
+  if (!left || !right) {
+    return false
+  }
+  if (left === right) {
+    return true
+  }
+
+  const leftTokens = left.split(/\s+/).filter(Boolean)
+  const rightTokens = right.split(/\s+/).filter(Boolean)
+  if (leftTokens.length === 0 || rightTokens.length === 0) {
+    return false
+  }
+
+  const leftSet = new Set(leftTokens)
+  const rightSet = new Set(rightTokens)
+  let overlap = 0
+  for (const token of leftSet) {
+    if (rightSet.has(token)) {
+      overlap += 1
+    }
+  }
+
+  const shorter = Math.min(leftSet.size, rightSet.size)
+  const union = new Set([...leftSet, ...rightSet]).size
+  const shorterCoverage = overlap / shorter
+  const jaccard = overlap / union
+
+  return overlap >= 4 && shorterCoverage >= 0.9 && jaccard >= 0.72
 }
 
 function emitProgress(stage, progress, detail) {
