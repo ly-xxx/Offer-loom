@@ -1,42 +1,50 @@
-# Technical Report
+# OfferLoom Technical Report
 
 [中文版本](./TECHNICAL_REPORT.md)
 
-## 1. Product Positioning
+## 1. Overview
 
-OfferLoom is not just a question-bank website, and it is not a general-purpose multi-agent platform.
+OfferLoom is a local-first interview-preparation system that unifies three classes of input:
 
-It is more accurately described as:
+- structured study guides
+- interview question banks
+- user-provided work materials such as papers, code, design notes, experiment logs, and notebooks
 
-- an interview-prep workspace centered on a mainline study guide
-- a RAG application that weaves guide knowledge, interview questions, and personal work evidence into one traceable chain
-- a documentation site that embeds `codex-cli` as a managed execution layer
+The current implementation is designed to:
 
-It is designed to solve four practical problems:
+- preserve study order by making the guide the primary reading surface
+- build traceable links from questions to knowledge anchors and work evidence
+- generate personalized answers only when sufficient project evidence exists
+- keep public release assets cleanly separated from private `mywork`
 
-1. users know many questions, but cannot map them back to concrete knowledge points
-2. users can describe projects, but struggle to connect them honestly to foundational interview questions
-3. users want both batch-generated answer packages and in-site agent collaboration for follow-up edits and questions
-4. public release materials must stay cleanly separated from private `mywork`
+The current release is a single-host system composed of a web frontend, an Express/WebSocket backend, a SQLite data layer, and a local `codex-cli` execution layer.
 
-## 2. System Boundary
+## 2. Scope and non-goals
 
-In implementation terms, OfferLoom is currently a:
+### 2.1 Scope
 
-- web frontend
-- Express + WebSocket backend
-- SQLite-centered data system
-- local `codex-cli` execution environment
+The current system covers:
 
-One boundary is important:
+- source discovery, synchronization, and index construction
+- guide-centered rendering with interview backlinks
+- `mywork` project scanning, summarization, and evidence grading
+- question translation, answer generation, and persistence
+- an in-site managed Codex console and an interactive PTY terminal
+- first-run visual configuration, task management, and live refresh
 
-- OfferLoom does have multiple managed agent roles
-- but these agents are product-level job executors
-- it is not an internal planner / executor / critic swarm
+### 2.2 Non-goals
 
-So the current design is “split responsibilities by product workflow,” not “build a complex autonomous multi-agent society inside every answer.”
+The current implementation is not intended to be:
 
-## 3. Overall Architecture
+- a general-purpose multi-agent orchestration platform
+- a cloud multi-tenant SaaS system
+- a heavy online retrieval stack that depends on an external vector database
+
+The system does contain multiple managed agent roles, but they are task-oriented execution components rather than a general autonomous orchestration stack.
+
+## 3. Overall architecture
+
+The system can be described as five layers:
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -48,13 +56,14 @@ So the current design is “split responsibilities by product workflow,” not �
 ┌─────────────────────────────────────────────────────────────┐
 │ HTTP + WebSocket Service                                   │
 │ /api/* /ws/codex /ws/watch                                 │
+│ Express + ws + job managers                                │
 └─────────────────────────────────────────────────────────────┘
                           │
           ┌───────────────┼────────────────┬──────────────────┐
           ▼               ▼                ▼                  ▼
 ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
 │ Index Agent    │ │ Answer Agent   │ │ Console Agent  │ │ PTY Runtime    │
-│ build-db       │ │ answer package │ │ managed Codex  │ │ interactive CLI│
+│ build-db       │ │ answer package │ │ managed codex  │ │ interactive CLI│
 └────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
           │               │                │                  │
           ▼               ▼                ▼                  ▼
@@ -66,12 +75,19 @@ So the current design is “split responsibilities by product workflow,” not �
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Sources + mywork + manual imports + codex-cli              │
+│ local dirs / Git repos / OCR imports / work materials      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 4. Which Agents We Built
+These layers are responsible for:
 
-OfferLoom currently implements four primary agent / runtime roles.
+- Web UI: reading, navigation, task management, and Codex interaction
+- HTTP/WebSocket service: APIs, job orchestration, and live events
+- Agent/runtime layer: indexing, answer generation, managed console, and PTY execution
+- Persistence layer: SQLite, generated artifacts, and runtime configuration
+- Source layer: public sources, `mywork`, manual imports, and local Codex execution
+
+## 4. Execution components and managed agents
 
 ### 4.1 Index Agent
 
@@ -82,16 +98,24 @@ Implementation:
 
 Responsibilities:
 
-- save runtime source configuration
-- sync Git-backed or local sources
+- persist runtime source configuration
+- synchronize Git-backed sources or load local ones
 - invoke `scripts/build-db.mjs`
 - build into a temporary database first
-- hot-swap the live database only after a successful build
-- stream progress and logs back to the UI
+- swap the live database only after a successful build
+- stream stage updates, logs, and progress to the UI
 
-This is a build-oriented agent. It does not answer questions directly; it rebuilds the knowledge substrate of the site.
+The indexing path uses a hot-swap strategy: work is written to `tempDbPath`, and the live database is replaced only after the build succeeds.
 
-### 4.2 Personalized Answer Agent
+Primary stage names include:
+
+- `writing_config`
+- `syncing_sources`
+- `building_index`
+- `swapping_database`
+- `ready`
+
+### 4.2 Answer Agent
 
 Implementation:
 
@@ -101,18 +125,16 @@ Implementation:
 
 Responsibilities:
 
-- load a question and its linked context
+- load question detail and linked context
 - gather guide anchors
-- gather direct and adjacent `mywork` evidence
+- gather `direct` and `adjacent` `mywork` evidence
 - merge explicit document references selected by the user
-- compose a prompt with skills
+- build the final prompt with skills
 - call `codex exec`
-- constrain output with JSON schema
+- constrain output with JSON Schema
 - persist results to SQLite and `data/generated/`
 
-This agent is optimized for stable, structured answer packages rather than open-ended chat.
-
-Its output is validated by `schemas/answer-package.schema.json`, including:
+This component is optimized for stable, structured answer generation rather than free-form chat. Its output is validated by `schemas/answer-package.schema.json`, including:
 
 - `elevator_pitch`
 - `full_answer_markdown`
@@ -124,6 +146,8 @@ Its output is validated by `schemas/answer-package.schema.json`, including:
 - `follow_ups`
 - `missing_basics`
 
+The frontend uses these fields to render short openings, full answers, work-based talking points, knowledge maps, citations, and likely follow-up questions.
+
 ### 4.3 Managed Codex Console Agent
 
 Implementation:
@@ -132,27 +156,33 @@ Implementation:
 - class: `ManagedCodexConsoleManager`
 - API entry: `POST /api/codex-console/jobs`
 
-This is the in-site document copilot.
-
 Responsibilities:
 
 - accept natural-language messages from the floating console
 - attach recent conversation history
-- attach the current document
-- attach selected files
-- attach selected project summaries
+- auto-attach the current document
+- attach explicitly selected files and project summaries
 - call `codex exec`
-- return a structured reply under `schemas/codex-console.schema.json`
+- return structured replies under `schemas/codex-console.schema.json`
 
-It is interaction-oriented rather than batch-oriented.
+This component is intended for in-site collaboration. Typical tasks include:
 
-It can:
+- explaining the current document
+- answering with chapter context
+- reviewing selected files
+- editing selected files
+- returning chat-style results with citations, warnings, and changed-file summaries
 
-- explain the current document
-- answer with chapter context
-- review a selected file
-- edit files directly
-- produce chat-friendly replies while preserving warnings, citations, and changed file summaries
+Its output contains:
+
+- `mode`
+- `headline`
+- `summary`
+- `reply_markdown`
+- `warnings`
+- `changed_files`
+- `citations`
+- `follow_ups`
 
 ### 4.4 Interactive PTY Codex Runtime
 
@@ -162,133 +192,84 @@ Implementation:
 - `scripts/codex_pty_bridge.py`
 - WebSocket endpoint: `/ws/codex`
 
-This is not a schema-constrained batch agent. It is a true terminal runtime.
+This component provides true terminal semantics rather than schema-constrained batch execution. The flow is:
 
-Flow:
-
-1. the browser sends `start / input / resize`
+1. the browser sends `start`, `input`, and `resize`
 2. the server launches a Python PTY bridge
-3. the bridge launches the real local `codex` process
-4. terminal output is streamed back to the browser
-5. the user gets an interactive Codex terminal inside the website
+3. the bridge starts the real local `codex` process
+4. stdout and stderr are streamed back to the browser
+5. the frontend renders a draggable, collapsible, resizable terminal pane
 
-### 4.5 Supporting Non-LLM Workers
+This path preserves native `codex-cli` interaction while allowing OfferLoom to add model selection, file injection, document references, and live refresh.
 
-There are also two important helper workers:
+### 4.5 Supporting workers
+
+The current implementation also includes two important helper workers:
 
 1. interview import worker
-   screenshot OCR is handled in the browser with `tesseract.js`, then saved as a new markdown question-bank source through `POST /api/questions/import`
+   `InterviewImportModal` supports pasted text and screenshot OCR; the screenshot path uses `tesseract.js` in the browser and persists the result through `POST /api/questions/import`
 2. file watch worker
-   `/ws/watch` listens for local file changes so documents can refresh immediately after Codex edits them
+   `server/index.ts` establishes `/ws/watch`, so the frontend can refresh document state immediately after Codex modifies a file
 
-## 5. Which Skills We Wrote
+## 5. Skill-layer design
 
-There are currently 6 skill files under `skills/`.
+The repository currently contains six skill files under `skills/`:
 
-### 5.1 Skills directly loaded in runtime
+- `answer-composer.md`
+- `mywork-triage.md`
+- `project-interviewer.md`
+- `codex-console.md`
+- `question-linker.md`
+- `work-summarizer.md`
 
-#### `answer-composer.md`
+### 5.1 Skills loaded directly in runtime
 
-Purpose:
+The following skills are already on the main execution path:
 
-- defines the structure and quality bar for personalized answer packages
-- forces explicit `direct / adjacent / none`
-- keeps the answer interview-ready rather than textbook-like
+- `answer-composer.md`
+  defines answer-package structure, quality bar, and output style
+- `mywork-triage.md`
+  constrains `mywork` relevance judgment and reinforces early stopping when evidence is weak
+- `project-interviewer.md`
+  reads project material from an interviewer’s perspective and surfaces defensible contributions and likely follow-ups
+- `codex-console.md`
+  standardizes console response style, citation handling, and changed-file summaries
 
-Used in:
-
-- `server/lib/codex.ts`
-- `scripts/batch-generate.mjs`
-
-#### `mywork-triage.md`
-
-Purpose:
-
-- constrains how the model judges `mywork` relevance
-- reinforces the “stop early if not relevant” rule
-- preserves honest grounding labels
-
-Used in:
+These skills are loaded by:
 
 - `server/lib/codex.ts`
 - `scripts/batch-generate.mjs`
 
-#### `project-interviewer.md`
+### 5.2 Skills present but not yet wired as standalone stages
 
-Purpose:
+The following skills exist but are not yet inserted as separate LLM stages:
 
-- makes the model think like a strong interviewer when reading project materials
-- surfaces project opening, defensible contribution, weak points, and likely follow-ups
+- `question-linker.md`
+  intended for fine-grained question-to-guide linking; the current linker still lives primarily in the heuristic/hybrid logic inside `scripts/build-db.mjs`
+- `work-summarizer.md`
+  intended for project summarization; the current project summary path is still largely rule-based in `server/lib/projectPrep.ts`
 
-Used in:
+### 5.3 Architectural role of skills
 
-- `server/lib/codex.ts`
-- `scripts/batch-generate.mjs`
+In the current design, skills function primarily as task-specific instruction templates rather than as a dynamic plugin runtime. Their role is to:
 
-#### `codex-console.md`
+- stabilize output shape across jobs
+- reduce prompt drift
+- keep Answer Agent, Console Agent, and batch scripts aligned on the same task constraints
 
-Purpose:
+## 6. Collaboration modes with `codex-cli`
 
-- defines the managed console’s response style
-- keeps replies compact, citation-aware, and UI-friendly
-- standardizes warnings and changed-file reporting
+OfferLoom integrates with `codex-cli` through three complementary paths.
 
-Used in:
-
-- `server/lib/codex.ts`
-
-### 5.2 Skills written but not yet auto-loaded into the main runtime path
-
-#### `question-linker.md`
-
-Role:
-
-- intended for question-to-guide anchor selection
-
-Current status:
-
-- present as a prompt asset
-- but the main linker logic is still implemented in `scripts/build-db.mjs`
-- it is not yet wired in as a separate LLM linker stage
-
-#### `work-summarizer.md`
-
-Role:
-
-- intended for single-project interview summaries
-
-Current status:
-
-- present as a prompt asset
-- but project summarization is still primarily handled by `server/lib/projectPrep.ts`
-
-### 5.3 What skills mean in OfferLoom
-
-In OfferLoom, a skill is not a dynamic plugin runtime. It is a prompt contract layer.
-
-Its purpose is to:
-
-- explicitly define role expectations
-- stabilize model output shape
-- reduce prompt drift across jobs
-
-So the current skill system is best understood as a set of code-loaded prompt contracts.
-
-## 6. How OfferLoom Collaborates with `codex-cli`
-
-This is the core execution design of the project.
-
-There are three collaboration modes.
-
-### 6.1 Schema-Constrained Batch Mode
+### 6.1 Schema-constrained batch mode
 
 Used for:
 
 - question translation
 - personalized answer generation
-- managed console structured replies
+- structured replies in the managed console
 
-Typical shape:
+Typical invocation shape:
 
 ```text
 codex exec
@@ -303,33 +284,29 @@ codex exec
 
 Properties:
 
-- prompt is streamed in via stdin
-- output is schema-constrained
-- the backend consumes only the final structured message
-- ideal for persistence and UI rendering
+- prompts are sent through stdin
+- outputs are schema-constrained
+- the backend consumes the final structured message only
+- results are easy to persist and render reliably
 
-### 6.2 Managed Console Mode
+### 6.2 Managed console mode
 
-In this mode, OfferLoom does more than send a single user message to Codex.
-
-It injects:
+This mode is built on `codex exec`, but OfferLoom controls the surrounding context. In addition to the user’s current message, the system injects:
 
 - recent conversation history
 - the current document
 - explicitly selected files
-- selected project summaries
-- the `codex-console.md` skill contract
+- explicitly selected project summaries
+- the response contract defined by `codex-console.md`
 
-So the division of labor is:
+The division of responsibilities is therefore:
 
-- `codex-cli` performs the actual reasoning and edits
-- OfferLoom handles context assembly, task governance, and result structuring
+- `codex-cli` performs reasoning and file operations
+- OfferLoom assembles context, governs the task, and structures the result
 
-### 6.3 True PTY Terminal Mode
+### 6.3 PTY interactive mode
 
-This path does not use `codex exec`. It launches the real CLI itself.
-
-The PTY bridge starts a command shaped like:
+This mode starts the real CLI directly. The command shape is close to:
 
 ```text
 codex
@@ -341,63 +318,69 @@ codex
   -c model_reasoning_effort="<effort>"
 ```
 
-This preserves the native CLI experience:
+This path preserves:
 
 - streaming terminal output
-- interactive input
-- dynamic resize
-- true terminal semantics
+- native keyboard interaction
+- dynamic resize behavior
+- longer exploratory editing workflows
 
-While the browser adds:
+### 6.4 Why all three paths are kept
 
-- model and effort switching
-- auto-reference to the current document
-- searchable file insertion
-- live file refresh after edits
+The three modes support different operational needs:
 
-### 6.4 Why both Codex paths exist
+- schema-constrained batch: stable, structured, and persistable
+- managed console: document collaboration with controlled context
+- PTY runtime: full terminal semantics for exploratory sessions
 
-Because they solve different problems:
+This separation allows the product to provide both batch-quality generation and real-time interactive CLI access inside one UI.
 
-1. `codex exec + schema`
-   stable, structured, persistable tasks
-2. `PTY + interactive codex`
-   exploratory workflows, open-ended edits, real terminal collaboration
-
-They are complementary, not redundant.
-
-## 7. How Data Flows
+## 7. Data flow
 
 ### 7.1 First-run flow
+
+The first-run path is:
 
 ```text
 config/sources.json
    ↓
 auto-discover sources/documents/* and sources/question-banks/*
    ↓
-bootstrap.mjs syncs Git sources when needed
+bootstrap.mjs synchronizes Git-backed sources
    ↓
-build-db.mjs reads guide / question banks / mywork
+build-db.mjs reads guide / question bank / mywork
    ↓
-SQLite + FTS + links are built
+build SQLite, FTS, and link relations
    ↓
-frontend reads from /api/meta /api/documents /api/questions
+frontend consumes /api/meta /api/documents /api/questions
 ```
 
-### 7.2 Index-build flow
+### 7.2 Index construction
 
-`scripts/build-db.mjs` performs six main steps:
+`scripts/build-db.mjs` can be summarized in six steps:
 
-1. load source config and translation cache
-2. parse guide / question bank / `mywork`
-3. normalize documents, split sections, extract questions, scan projects, chunk work docs
+1. load source configuration and translation cache
+2. parse guides, question banks, and `mywork`
+3. normalize documents, split sections, extract questions, scan projects, and chunk work documents
 4. optionally build embeddings
-5. link questions to guide / work materials
-6. write SQLite, FTS, and `app_meta`
+5. compute question-to-guide and question-to-work relations
+6. write SQLite tables, FTS tables, and `app_meta`
 
-### 7.3 Translation flow
+The build emits stage events such as:
 
-Question translation goes through `scripts/batch-translate-questions.mjs`:
+- `sources`
+- `mywork_scan`
+- `embedding_prepare`
+- `embedding_run`
+- `linking`
+- `finalize`
+- `done`
+
+The Index Agent maps these events to frontend progress and logs.
+
+### 7.3 Question translation
+
+Question translation is handled by `scripts/batch-translate-questions.mjs`:
 
 ```text
 questions
@@ -410,10 +393,12 @@ write translatedText into questions.metadata_json
    ↓
 update questions_fts
    ↓
-save translation cache
+persist translation cache
 ```
 
-### 7.4 Personalized answer flow
+### 7.4 Personalized answer generation
+
+When a user requests a personalized answer, the path is:
 
 ```text
 Question ID
@@ -422,38 +407,42 @@ db.getQuestion()
    ↓
 guideMatches / guideFallbackMatches / workMatches / workHintMatches
    ↓
-attach current document + explicit references
+attach current document and explicit references
    ↓
-load skills: answer-composer + mywork-triage + project-interviewer
+load answer-composer + mywork-triage + project-interviewer
    ↓
 codex exec + answer schema
    ↓
 persist to generated_answers
    ↓
-persist JSON file to data/generated/<questionId>.json
+persist JSON under data/generated/<questionId>.json
    ↓
 frontend polls job state and renders the package
 ```
 
 ### 7.5 Managed console flow
 
+The managed console path is:
+
 ```text
 user message
    ↓
 recent conversation
    ↓
-current document / selected files / selected projects
+current document / selected files / selected project summaries
    ↓
-load skill: codex-console
+load codex-console skill
    ↓
 codex exec + console schema
    ↓
-return structured chat response
+return structured reply
    ↓
 frontend renders markdown / changed_files / citations / warnings
 ```
 
-### 7.6 Screenshot interview import flow
+### 7.6 Interview import and live refresh
+
+Screenshot import flow:
 
 ```text
 user pastes screenshot
@@ -462,24 +451,24 @@ frontend OCR via tesseract.js
    ↓
 POST /api/questions/import
    ↓
-save markdown under sources/question-banks/manual-mianjing/imports/<month>/<file>.md
+persist markdown under sources/question-banks/manual-mianjing/imports/<month>/<file>.md
    ↓
-next rebuild ingests it as part of the question bank
+included on the next index rebuild
 ```
 
-### 7.7 Live file refresh flow
+Live refresh flow:
 
 ```text
 Codex edits a file
    ↓
-/ws/watch observes file system change
+/ws/watch detects file-system change
    ↓
 browser receives changed event
    ↓
 current document state refreshes
 ```
 
-## 8. Indexing, Retrieval, and Matching
+## 8. Indexing, retrieval, and linking
 
 ### 8.1 Guide layer
 
@@ -489,30 +478,30 @@ Guides are decomposed into:
 - `sections`
 - `sections_fts`
 
-Each section acts as a knowledge anchor.
+Each `section` acts as a knowledge anchor for highlighting and question attachment.
 
 ### 8.2 Question-bank layer
 
-Question banks go through:
+Question-bank processing includes:
 
 - question extraction
 - canonical normalization
-- fingerprint deduplication
-- type / difficulty classification
+- fingerprint-based deduplication
+- type and difficulty inference
 - optional translation
 - insertion into `questions` and `questions_fts`
 
 ### 8.3 `mywork` layer
 
-`mywork` is processed conservatively:
+`mywork` follows a conservative indexing path:
 
-- candidate projects are detected first
-- project relevance is scored before deep indexing
-- documents enter `documents`
-- projects enter `work_projects`
-- chunks enter `work_chunks` and `work_chunks_fts`
+- detect candidate projects first
+- decide whether a project is worth indexing
+- store source documents in `documents`
+- store project summaries in `work_projects`
+- store chunk-level retrieval units in `work_chunks` and `work_chunks_fts`
 
-The system also builds project-prep structures:
+The system also prepares interview-oriented project summaries, including:
 
 - `openingPitch`
 - `whyThisProjectMatters`
@@ -520,9 +509,9 @@ The system also builds project-prep structures:
 - `highlightFacts`
 - `deepDiveQuestions`
 
-These are mainly generated by `server/lib/projectPrep.ts`.
+These are currently produced mainly by `server/lib/projectPrep.ts`.
 
-### 8.4 Link relations
+### 8.4 Persisted link relations
 
 The main persisted relations are:
 
@@ -532,37 +521,52 @@ The main persisted relations are:
 - `question_to_work`
 - `question_to_work_hint`
 
-These determine:
+Their roles are:
 
-- whether a question is attached to a concrete knowledge point
-- whether it only belongs to a chapter-level fallback bucket
-- whether project evidence is direct, adjacent, or absent
+- `question_to_section`: precise knowledge-point attachment
+- `question_to_document_fallback`: chapter-level extension questions
+- `question_to_work` and `question_to_work_hint`: direct versus adjacent project evidence
 
-### 8.5 Retrieval modes
+### 8.5 Precision control
 
-The build pipeline records:
+The current release uses a two-tier policy of precise attachment plus chapter fallback:
+
+- only high-confidence matches attach to a concrete `section`
+- questions that are clearly relevant to the chapter but not precise enough for a paragraph attach to `question_to_document_fallback`
+
+On the work side, evidence is graded as:
+
+- `direct`
+- `adjacent`
+- `none`
+
+This policy is intended to reduce two specific failure modes:
+
+- weakly related questions being presented as exact knowledge hits
+- irrelevant project material being forced into foundational answers
+
+### 8.6 Retrieval modes
+
+The build records:
 
 - `retrieval_mode`
 - `embedding_model`
 - `embedding_error`
 - `work_index_summary`
 
-So OfferLoom can:
+As a result, the system can operate in hybrid mode when embeddings are available and fall back to lexical/heuristic mode when they are not.
 
-- use hybrid retrieval when embeddings are available
-- gracefully fall back to lexical / heuristic retrieval when they are not
-
-## 9. What the Data Structures Look Like
+## 9. Data model and schemas
 
 ### 9.1 Source configuration
 
-Core config types:
+Core configuration types include:
 
 - `OfferLoomSource`
 - `OfferLoomWorkSource`
 - `OfferLoomSourcesConfig`
 
-Simplified example:
+A simplified example is:
 
 ```json
 {
@@ -593,9 +597,9 @@ Simplified example:
 }
 ```
 
-### 9.2 Persistent database schema
+### 9.2 Persistent storage
 
-Main tables:
+Primary tables:
 
 - `app_meta`
 - `sources`
@@ -613,69 +617,38 @@ FTS tables:
 - `questions_fts`
 - `work_chunks_fts`
 
-Semantic roles:
+Semantic layering:
 
 - `documents`: raw source documents
 - `sections`: guide knowledge anchors
 - `questions`: interview questions
-- `links`: all question-to-guide / question-to-work relations
-- `work_projects`: project-level summaries
-- `work_chunks`: chunk-level work retrieval units
+- `links`: question-to-guide and question-to-work relations
+- `work_projects`: project summary layer
+- `work_chunks`: chunk-level work retrieval layer
 - `generated_answers`: persisted LLM outputs
 
-### 9.3 Frontend runtime types
+### 9.3 Core frontend types
 
-The UI mainly revolves around:
+The frontend primarily revolves around:
 
-- `DocumentData`
-- `DocumentSection`
-- `QuestionListItem`
 - `QuestionDetail`
-- `WorkProject`
+- `DocumentData`
 - `WorkProjectDetail`
 - `GeneratedAnswer`
 - `AgentJob`
 
-Three especially important structures are:
+In practice:
 
-#### `DocumentData`
+- `QuestionDetail` contains question text, translation, guide matches, work evidence, and generated answers
+- `DocumentData` contains document metadata, sectioned content, hit counts, and chapter extensions
+- `WorkProjectDetail` contains project summaries, representative documents, and interview-oriented questions
+- `AgentJob` unifies answer jobs, console jobs, and indexing jobs inside the task center
 
-Contains:
-
-- document metadata
-- all `sections`
-- per-section `knowledgeHitCount`
-- per-section `relatedQuestions`
-- chapter-end `looseRelatedQuestions`
-- `watchPath`
-
-#### `QuestionDetail`
-
-Contains:
-
-- original and translated question text
-- `guideMatches`
-- `guideFallbackMatches`
-- `workMatches`
-- `workHintMatches`
-- `workEvidenceStatus`
-- `generated`
-
-#### `AgentJob`
-
-A unified job type for:
-
-- answer jobs
-- console jobs
-- index jobs
-
-This is why the task center can manage all three workflows inside one UI.
+These types are defined in `web/src/types.ts`.
 
 ### 9.4 Answer-package schema
 
-`answer-package.schema.json` defines the personalized answer package.
-
-Simplified shape:
+Personalized answers are constrained by `schemas/answer-package.schema.json`. A simplified shape is:
 
 ```json
 {
@@ -706,9 +679,7 @@ Simplified shape:
 
 ### 9.5 Console-reply schema
 
-`codex-console.schema.json` defines the managed console output.
-
-Simplified shape:
+Managed-console output is constrained by `schemas/codex-console.schema.json`. A simplified shape is:
 
 ```json
 {
@@ -734,113 +705,91 @@ Simplified shape:
 }
 ```
 
-Compared with the answer package:
+Unlike the answer package, this structure is optimized for conversational collaboration and therefore includes `changed_files` rather than forcing fields such as `knowledge_map` or `work_story`.
 
-- it is optimized for chat and file collaboration
-- it includes `changed_files`
-- it does not force `knowledge_map` or `work_story`
+## 10. Frontend data consumption
 
-## 10. How the Frontend Consumes the Data
+The frontend is not just a markdown renderer. It projects structured data into three primary views.
 
-The frontend does not just render markdown. It projects the structured data into three views:
+### 10.1 Guide view
 
-1. mainline guide view
-2. interview-question view
-3. work-project view
+Centered on `DocumentData.sections`, it:
 
-### 10.1 Mainline guide view
-
-Centered on `DocumentData.sections`:
-
-- section content is rendered directly
-- sections with `knowledgeHitCount > 0` are highlighted
-- `relatedQuestions` become section footnotes
-- `looseRelatedQuestions` become chapter-end extension questions
+- renders section content
+- highlights sections with `knowledgeHitCount > 0`
+- displays `relatedQuestions` beneath each section
+- displays `looseRelatedQuestions` at chapter end
 
 ### 10.2 Interview view
 
-Centered on `QuestionDetail`:
+Centered on `QuestionDetail`, it:
 
-- shows mainline exact hits and fallback hits
-- shows work-evidence quality
+- shows exact and chapter-level guide matches
+- shows work-evidence status
 - renders generated answer packages
-- supports generation, rerun, and jump-back links into the guide
+- exposes jump-back links and regeneration actions
 
-### 10.3 MyWork view
+### 10.3 My Work view
 
-Centered on `WorkProjectDetail`:
+Centered on `WorkProjectDetail`, it:
 
-- opening pitch
-- why the project matters
-- interview arc
-- deep-dive questions
-- related interview questions and representative files
+- renders project opening pitches
+- explains why the project matters
+- surfaces interview arcs and deep-dive questions
+- lists related questions and representative files
 
-## 11. What Is Actually Implemented Today
+### 10.4 Settings, jobs, and Codex pane
 
-From an implementation perspective, OfferLoom already supports:
+In addition to the three content views, the frontend also handles:
 
-- unified local / Git source configuration and discovery
-- one-time indexing of guides, question banks, and `mywork`
+- source configuration and first-run onboarding
+- unified task monitoring for indexing, answer generation, and console jobs
+- the floating managed Codex console and PTY terminal
+
+## 11. Release and privacy boundary
+
+OfferLoom is intended to be published as a public base plus a private work layer:
+
+- public sample sources can stay in the repository
+- `mywork/` should remain outside version control
+- `config/*.runtime.json` should remain outside version control
+- databases, generated answers, caches, and model artifacts should not be committed
+
+This boundary is important for three reasons:
+
+- the repository remains runnable with sample content
+- each user can attach private work material locally
+- local paths, project aliases, and private documents stay out of public release history
+
+## 12. Current implementation status
+
+The current codebase already implements:
+
+- unified discovery and configuration for local and Git-backed sources
+- one-time indexing for guides, question banks, and `mywork`
 - layered indexing over sections, questions, and work chunks
-- exact-hit + chapter-fallback guide linking
-- `direct / adjacent / none` work-evidence grading
-- Chinese question translation
-- structured personalized answer generation and persistence
-- managed Codex console
-- interactive PTY Codex terminal
+- exact-hit plus chapter-fallback attachment
+- `direct` / `adjacent` / `none` work-evidence grading
+- question translation, personalized answer generation, and persistence
+- the managed Codex console
+- the interactive PTY Codex terminal
 - live file refresh after edits
-- text / screenshot interview import
+- text and screenshot interview import
 - a unified task center
 
-## 12. What Is Written but Not Fully Wired Yet
+## 13. Current limitations and next steps
 
-To keep the report honest:
+The current release still has several clear boundaries:
 
-1. `question-linker.md`
-   exists, but the linker is still primarily implemented as scoring / hybrid logic inside `build-db.mjs`
-2. `work-summarizer.md`
-   exists, but project summarization is still mainly handled by `projectPrep.ts`
-3. exact-hit retrieval
-   still relies on strong heuristics plus optional embeddings, not a full cross-encoder reranker
-4. answer agent vs. console agent
-   are parallel product agents, not a deeper internal planner / executor multi-agent orchestration
+1. `question-linker.md` is not yet wired as a standalone LLM linker/reranker stage; linking still relies mainly on the heuristic and optional-embedding logic in `build-db.mjs`.
+2. `work-summarizer.md` is not yet on the main path; project summarization is still mostly rule-based in `projectPrep.ts`.
+3. Question deduplication already uses normalization and fingerprints, but it is not yet a full semantic clustering pipeline.
+4. `generated_answers` is persisted, but prompt lineage and answer-version management are still limited.
 
-## 13. Why the System Is Designed This Way
+The most natural next steps are:
 
-The design principles are simple:
-
-- keep the data model stable first with SQLite
-- use schema constraints to turn `codex-cli` into a reliable structured-output producer
-- use skills to stabilize prompt contracts
-- use a unified job model to govern indexing, generation, and console tasks together
-- use conservative `mywork` triage to prevent fake project grounding
-
-So the core closed loop of OfferLoom is:
-
-```text
-mainline knowledge
-  → interview backlinks
-  → work-evidence constraints
-  → Codex structured generation
-  → online documentation + interactive agent collaboration
-```
-
-## 14. Natural Next Steps
-
-The architecture is well positioned for further upgrades:
-
-1. wire `question-linker.md` into a dedicated linker / reranker step
-2. wire `work-summarizer.md` into project-summary generation
-3. add stronger semantic dedup / clustering
-4. add prompt lineage and versioning to `generated_answers`
-5. make console-driven edits and doc jumps even tighter
-
-Even in its current form, though, the system is already a complete, publishable implementation with:
-
-- a stable data substrate
-- explicit agent roles
-- a real skill layer
-- a practical `codex-cli` collaboration model
-- persistent answer structures
-- a full frontend interaction loop
+- wiring `question-linker.md` into a dedicated linking/reranking stage
+- wiring `work-summarizer.md` into project-summary generation
+- adding stronger semantic deduplication and clustering
+- introducing answer versioning, prompt lineage, and regression comparison
+- tightening the interaction between console edits, document jumps, and explicit reference selection

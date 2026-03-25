@@ -2,121 +2,82 @@
 
 [中文 README](./README.md)
 
-OfferLoom is an interview-prep workspace that weaves together a guided study track, interview question banks, and your own work materials into one evidence-aware learning flow.
+OfferLoom is a local-first interview-preparation workspace that applies one indexing, retrieval, and generation pipeline to three classes of input:
 
-Instead of flattening everything into a giant question list, it does three things:
+- structured study guides
+- interview question banks
+- personal work materials such as papers, code, design notes, experiment logs, and notebooks
 
-- treats the full guide as the primary learning path, so you can study in sequence
-- folds interview questions into chapter footnotes and highlights the knowledge points they actually hit
-- pulls in real projects, papers, code, and notes from `mywork/`, but only cites them when they are genuinely relevant
+The system is built around two principles:
 
-For GitHub users, the goal is straightforward:
+- preserve study order by treating the guide as the primary reading surface
+- keep answer generation evidence-aware by introducing project experience only when `mywork` contains sufficiently relevant support
 
-- it runs out of the box with built-in public example sources
-- first-run configuration can be completed visually in the web UI
-- you only need to prepare `codex` / `codex-cli` and your own `mywork` directory
+OfferLoom is not limited to LLM interviews. The same workflow can be applied to any domain as long as you can provide study materials, interview questions, and candidate work materials for that domain.
 
-## What makes it different
+## Main capabilities
 
-OfferLoom splits each knowledge point into three layers:
-
-1. Mainline knowledge
-   The guide remains the first-person learning view, so study order stays intact.
-2. Interview backlinks
-   Questions are attached to knowledge points instead of living in a disconnected list, and the UI marks whether they truly appear in the mainline.
-3. Personalized answers
-   Answers cite the guide first. They only lean on `mywork` when there is real supporting evidence.
-
-That means OfferLoom does not force project talk into every answer. If a question is foundational, or your work is simply not relevant, the system says so honestly and keeps the answer knowledge-driven.
-
-## Core matching pattern
-
-The release build uses a deliberate “high recall + high precision pruning” pattern:
-
-- the guide is retrieved hierarchically
-  it first tries to match concrete knowledge anchors, then chapter-level candidates
-- exact hits and chapter fallbacks are separated
-  only high-confidence questions are attached to a paragraph; weaker but still chapter-relevant questions go to the end-of-chapter extension bucket
-- `mywork` is graded honestly
-  `direct`: the project can truly support this answer
-  `adjacent`: only neighboring experience exists, so the answer may bridge carefully
-  `none`: there is no useful project evidence, so the system does not fake one
-- personalized answers follow “answer first, then decide whether project evidence is needed”
-  simple and purely foundational questions are allowed to stay project-free
-
-This aligns with mainstream RAG / hybrid retrieval practice:
-
-- hybrid lexical + semantic recall first
-- rerank / precision gates second, so weak matches are not disguised as exact hits
-- a fallback bucket for theme-level relevance instead of stuffing weak candidates into the wrong chunk
-
-See [docs/TECHNICAL_REPORT.en.md](./docs/TECHNICAL_REPORT.en.md) for the technical details.
-
-## Technical report in one glance
-
-The new technical report is no longer just a product-level overview. It is now an implementation-oriented system report.
-
-If you found this project through GitHub search, the report now covers these concrete threads:
-
-- which agents we actually built
-  `Index Agent`, `Answer Agent`, `Managed Codex Console Agent`, and the interactive `PTY Codex Runtime`
-- which skills we actually wrote
-  including which ones are already wired into the main runtime path and which ones are currently prompt assets only
-- how OfferLoom collaborates with `codex-cli`
-  including `codex exec + schema`, the managed console path, and the true PTY terminal path
-- how data flows through the system
-  from sources / `mywork` / OCR imports to indexing, translation, answer generation, and live refresh
-- what the core data structures look like
-  including source config, SQLite schema, link relations, frontend TypeScript types, and answer / console JSON schemas
-
-The details live in [docs/TECHNICAL_REPORT.en.md](./docs/TECHNICAL_REPORT.en.md). The README is for onboarding; the technical report explains the real execution model, data model, and system boundaries.
+- Guide-centered study flow
+  The main UI follows the document order of the guide instead of flattening everything into a question list.
+- Interview backlinks
+  Questions are attached to concrete knowledge points and chapter endings, with exact hits separated from chapter-level extensions.
+- Personalized answers
+  Answers are generated from guide context, question context, and `mywork` evidence; when project evidence is weak or absent, the answer remains knowledge-driven.
+- Conservative `mywork` scanning
+  The system evaluates whether a directory forms a credible project before indexing it deeply.
+- In-site Codex collaboration
+  A managed floating Codex console can reference the current document, attach files, and switch to a true PTY terminal path when needed.
+- Visual first-run setup
+  Source selection, indexing, and job monitoring can be completed in the browser.
+- Interview import
+  New interview material can be added through pasted text or screenshot OCR and persisted as question-bank content.
 
 ## Built-in public example sources
 
-The repository ships with public sample content so that GitHub users can run it immediately:
+The repository already includes public sample content so a fresh clone can start immediately:
 
 - `sources/documents/llm-agent-interview-guide`
 - `sources/question-banks/llm-interview-questions`
 - `sources/question-banks/qa-hub`
 
-Their public upstream repositories are listed in [docs/SOURCES.en.md](./docs/SOURCES.en.md).
+Their upstream repositories are listed in [docs/SOURCES.en.md](./docs/SOURCES.en.md).
 
-Your private materials only need to live in:
+Private work materials are expected under:
 
 - `./mywork/`
 
 `mywork/` is ignored by default and should not be published.
 
-## What you should prepare before first use
+## Prerequisites
 
-Please confirm two things first:
+Before first use, confirm the following:
 
-1. `codex` / `codex-cli` is installed and executable on the host machine.
-2. You already have your own work-material directory.
+1. `codex` or `codex-cli` is installed and executable on the host machine
+2. you have prepared your own work-material directory
 
-Recommended `mywork` contents include:
+Recommended `mywork/` contents include:
 
 - project READMEs
-- paper PDFs / drafts
+- paper PDFs or drafts
 - code directories
 - notebooks
 - experiment logs
 - technical design notes
-- debugging retrospectives
+- debugging and retrospective notes
 
-More guidance is in [docs/MYWORK.en.md](./docs/MYWORK.en.md).
+See [docs/MYWORK.en.md](./docs/MYWORK.en.md) for a suggested structure.
 
-## One-command startup
+## Quick start
 
 ```bash
 npm install
 npm run setup:serve
 ```
 
-By default, this will:
+The default flow will:
 
 1. check whether `codex` is available
-2. sync Git-backed public sources declared in the config
+2. sync Git-backed sources declared in the config
 3. build the SQLite index
 4. build the frontend and backend
 5. start the service on port `6324`
@@ -126,9 +87,9 @@ Then open:
 - `http://127.0.0.1:6324`
 - or the LAN URL printed by the startup script
 
-## Manual startup
+## Step-by-step startup
 
-If you want to run the steps separately:
+If you want to control each stage explicitly:
 
 ```bash
 npm install
@@ -138,32 +99,37 @@ npm run build
 npm start
 ```
 
-## First-run UI flow
+## First-run setup in the UI
 
-The release build supports visual first-run setup in the browser instead of forcing users to edit config files by hand.
-
-Recommended flow:
+Recommended first-run sequence:
 
 1. run `npm run setup:serve`
 2. open the site
-3. review the default public sources in the Settings panel
-4. point `mywork` to your own directory, or keep using `./mywork` under the repo root
-5. launch the indexing job from Settings and watch the live progress view
-6. once indexing finishes, start from the mainline guide or switch to the interview tab
+3. review the default public sources in Settings
+4. point `mywork` to your own directory, or keep `./mywork` under the repo root
+5. start the indexing job from Settings and monitor progress in the Tasks panel
+6. begin from the guide view or switch to the interview view after indexing completes
 
-After the first run, the two top-right panels become the main control points:
+Settings is responsible for:
 
-- Settings manages sources, theme, typography, and index actions
-- Tasks shows indexing jobs, answer-generation jobs, and agent status
+- source configuration
+- theme and typography
+- index actions
 
-If you do not want the default sources, the Settings UI can switch them to:
+Tasks is responsible for:
+
+- indexing jobs
+- personalized answer generation jobs
+- managed Codex jobs
+
+If you do not want the default sources, the Settings panel can switch them to:
 
 - local directories
 - Git repositories
 
 ## Automatic source discovery
 
-The app automatically discovers:
+OfferLoom automatically discovers sources under:
 
 ```text
 sources/
@@ -173,53 +139,42 @@ sources/
     └── <your-question-bank-source>/
 ```
 
-So if a GitHub user drops a new guide or question bank into those folders, then saves settings and rebuilds the index, OfferLoom will bring the new source into the system.
+In practice, adding a new public source often means placing a directory in the correct location, saving settings, and rebuilding the index.
 
-Besides auto-discovery, the Settings UI also supports manual source registration for:
+The Settings UI also supports manual registration for:
 
 - local directories
 - Git repositories
 
-## Conservative `mywork` scanning
+## How `mywork` is handled
 
-OfferLoom does not blindly ingest every file under `mywork`. It scans conservatively:
+OfferLoom scans `mywork` conservatively:
 
-- it first decides whether a directory really looks like a project
-- it stops early if the structure is clearly mismatched or empty
-- it only recurses deeply when the directory can form a credible project profile
-- projects that barely relate to the current question are down-ranked instead of being force-matched
+- it first checks whether a directory forms a credible project
+- it stops early for clearly empty or structurally mismatched directories
+- it only recurses deeply when the material can support a coherent project profile
+- it down-ranks weakly related projects instead of force-matching them
 
-That is why personalized answers distinguish between:
+For that reason, work evidence is graded into:
 
 - `direct`
 - `adjacent`
 - `none`
 
-The system prefers under-claiming over inventing project-based credibility.
+The goal is to keep personalized answers honest and traceable rather than making every answer sound project-backed.
 
-## In-product experience
+## Technical notes
 
-- the left side is a compact tree sidebar with `Documents / Interviews / My Work`
-- the main area expands the guide as a continuous study document, preserving the intended learning order
-- each guide section accumulates related interview questions at the bottom; weaker chapter-level matches go into a chapter extension bucket
-- the interview tab explicitly shows:
-  - whether a question appears in the mainline
-  - how many times it appears
-  - whether it is an exact hit or only a chapter fallback
-  - where the backlinks lead
-- clicking a knowledge hit opens a floating knowledge window that shows:
-  - related questions
-  - personalized answers
-  - backlink traces
-  - `mywork` evidence quality
-- the lower-right corner hosts the managed Codex window
-  - it can auto-reference the current document
-  - it can search and attach additional files
-  - it supports model switching and reasoning effort
-- the top-right `+` action can import new interview materials
-  - pasted text
-  - OCR from screenshots
-  - persistent storage into the question bank
+Implementation details are documented in [docs/TECHNICAL_REPORT.en.md](./docs/TECHNICAL_REPORT.en.md), including:
+
+- system architecture and component boundaries
+- managed agents and supporting workers
+- skills and their current integration status
+- collaboration modes with `codex-cli`
+- data flow, indexing, and persistence
+- frontend data models and UI responsibilities
+
+The README is intended for onboarding. The technical report is intended for architecture, execution model, and schema-level details.
 
 ## Main scripts
 
@@ -244,9 +199,9 @@ The system prefers under-claiming over inventing project-based credibility.
 - `npm run clean:data`
   clean databases, generated answers, caches, and intermediate artifacts
 
-## Release boundaries
+## Release and privacy boundaries
 
-This repository is intentionally structured as “public base + private workset”:
+The repository is intended to be published as a public base with a private workset layered on top:
 
 - public sample guides and question banks stay in the repo
 - `mywork/` stays out of Git by default
@@ -263,18 +218,34 @@ Before publishing or sharing the repo, read:
 ## Documentation index
 
 - [docs/TECHNICAL_REPORT.en.md](./docs/TECHNICAL_REPORT.en.md)
-  system architecture, agents, skills, Codex collaboration, data flow, and schemas
+  system architecture, agents, skills, data flow, and schemas
+- [docs/TECHNICAL_REPORT.md](./docs/TECHNICAL_REPORT.md)
+  Chinese system report
 - [docs/SOURCES.en.md](./docs/SOURCES.en.md)
-  built-in public example sources and upstream attribution
+  built-in public sources and upstream attribution
+- [docs/SOURCES.md](./docs/SOURCES.md)
+  Chinese source list
 - [docs/MYWORK.en.md](./docs/MYWORK.en.md)
   recommended structure for `mywork`
+- [docs/MYWORK.md](./docs/MYWORK.md)
+  Chinese `mywork` guide
 - [docs/CONFIGURATION.en.md](./docs/CONFIGURATION.en.md)
   source configuration and runtime overrides
+- [docs/CONFIGURATION.md](./docs/CONFIGURATION.md)
+  Chinese configuration guide
 - [docs/RELEASE.en.md](./docs/RELEASE.en.md)
   release checklist
+- [docs/RELEASE.md](./docs/RELEASE.md)
+  Chinese release checklist
 - [docs/PRIVACY.en.md](./docs/PRIVACY.en.md)
-  privacy boundaries
+  privacy notes
+- [docs/PRIVACY.md](./docs/PRIVACY.md)
+  Chinese privacy notes
 - [docs/TROUBLESHOOTING.en.md](./docs/TROUBLESHOOTING.en.md)
-  common issue diagnosis
+  troubleshooting notes
+- [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+  Chinese troubleshooting notes
 - [docs/CLI_AGENT.en.md](./docs/CLI_AGENT.en.md)
   embedded CLI agent runtime notes
+- [docs/CLI_AGENT.md](./docs/CLI_AGENT.md)
+  Chinese embedded CLI agent notes
