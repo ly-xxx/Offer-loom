@@ -1,0 +1,48 @@
+{
+  "name": "offerloom",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "run-p dev:server dev:web",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "npm --workspace web run dev -- --host 0.0.0.0 --port 5173",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "build:data": "node scripts/build-db.mjs",
+    "refresh:data": "bash scripts/refresh-data.sh",
+    "batch:translate-questions": "node scripts/batch-translate-questions.mjs",
+    "batch:generate": "node scripts/batch-generate.mjs",
+    "batch:codex": "node scripts/batch-codex.mjs",
+    "build:web": "npm --workspace web run build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:web && npm run build:server",
+    "clean:data": "bash scripts/clean-release-data.sh",
+    "start": "node dist/server/index.js",
+    "setup": "npm install && npm run bootstrap && npm run build:data && npm run build",
+    "setup:serve": "bash scripts/setup-and-serve.sh"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "better-sqlite3": "^12.4.1",
+    "chokidar": "^4.0.3",
+    "express": "^5.1.0",
+    "fast-glob": "^3.3.3",
+    "gray-matter": "^4.0.3",
+    "mime-types": "^3.0.1",
+    "undici": "^7.24.5",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.5",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^24.6.0",
+    "@types/ws": "^8.18.1",
+    "npm-run-all": "^4.1.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

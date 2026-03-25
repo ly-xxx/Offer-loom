@@ -1,0 +1,32 @@
+{
+  "guides": [
+    {
+      "id": "llm-agent-interview-guide",
+      "type": "local",
+      "path": "./sources/documents/llm-agent-interview-guide",
+      "kind": "guide"
+    }
+  ],
+  "questionBanks": [
+    {
+      "id": "llm-interview-questions",
+      "type": "local",
+      "path": "./sources/question-banks/llm-interview-questions",
+      "kind": "question_bank"
+    },
+    {
+      "id": "qa-hub",
+      "type": "local",
+      "path": "./sources/question-banks/qa-hub",
+      "kind": "question_bank"
+    }
+  ],
+  "myWork": {
+    "id": "candidate-workspace",
+    "type": "local",
+    "path": "./mywork",
+    "kind": "work_root",
+    "supplementalRoots": [],
+    "manifestPath": "./config/work-manifest.json"
+  }
+}

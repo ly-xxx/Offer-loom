@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OfferLoomAnswerPackage",
+  "type": "object",
+  "required": [
+    "question",
+    "elevator_pitch",
+    "full_answer_markdown",
+    "work_story",
+    "work_evidence_status",
+    "work_evidence_note",
+    "knowledge_map",
+    "citations",
+    "follow_ups",
+    "missing_basics"
+  ],
+  "properties": {
+    "question": {
+      "type": "string"
+    },
+    "elevator_pitch": {
+      "type": "string"
+    },
+    "full_answer_markdown": {
+      "type": "string"
+    },
+    "work_story": {
+      "type": "string"
+    },
+    "work_evidence_status": {
+      "type": "string",
+      "enum": [
+        "direct",
+        "adjacent",
+        "none"
+      ]
+    },
+    "work_evidence_note": {
+      "type": "string"
+    },
+    "knowledge_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "concept",
+          "why_it_matters",
+          "confidence"
+        ],
+        "properties": {
+          "concept": {
+            "type": "string"
+          },
+          "why_it_matters": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "path",
+          "kind"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "guide",
+              "question_bank",
+              "work",
+              "dynamic"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "follow_ups": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_basics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

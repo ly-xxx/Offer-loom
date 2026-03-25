@@ -1,0 +1,61 @@
+:root {
+  color-scheme: light;
+  font-family: 'Space Grotesk', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #182631;
+  background:
+    radial-gradient(circle at top left, rgba(117, 188, 200, 0.16), transparent 34%),
+    radial-gradient(circle at top right, rgba(180, 215, 224, 0.18), transparent 30%),
+    linear-gradient(180deg, #f6f9fc, #eef4f8 44%, #f8fbfd);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --accent: #4d98a5;
+  --accent-faint: rgba(77, 152, 165, 0.12);
+  --accent-strong: #2c6e79;
+  --app-background: radial-gradient(circle at top left, rgba(117, 188, 200, 0.16), transparent 34%), radial-gradient(circle at top right, rgba(180, 215, 224, 0.18), transparent 30%), linear-gradient(180deg, #f6f9fc, #eef4f8 44%, #f8fbfd);
+  --border-soft: rgba(107, 136, 149, 0.14);
+  --border-strong: rgba(90, 132, 143, 0.24);
+  --control-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 252, 0.97));
+  --panel-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 252, 0.94));
+  --panel-surface-strong: linear-gradient(180deg, rgba(252, 254, 255, 0.98), rgba(242, 248, 251, 0.96));
+  --primary-from: #2f7e89;
+  --primary-to: #58a7b3;
+  --shadow-rgb: 24, 38, 49;
+  --surface-muted: rgba(244, 249, 252, 0.92);
+  --surface-soft: rgba(255, 255, 255, 0.88);
+  --surface-subtle: rgba(239, 247, 250, 0.94);
+  --text: #182631;
+  --muted: #667785;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--app-background);
+  color: var(--text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}

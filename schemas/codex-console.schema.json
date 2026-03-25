@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OfferLoomCodexConsoleReply",
+  "type": "object",
+  "required": [
+    "mode",
+    "headline",
+    "summary",
+    "reply_markdown",
+    "warnings",
+    "changed_files",
+    "citations",
+    "follow_ups"
+  ],
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "answer",
+        "edit",
+        "review",
+        "plan",
+        "mixed"
+      ]
+    },
+    "headline": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "reply_markdown": {
+      "type": "string"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "summary"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "path",
+          "kind"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "current_document",
+              "selected_file",
+              "selected_project",
+              "guide",
+              "work",
+              "dynamic"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "follow_ups": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

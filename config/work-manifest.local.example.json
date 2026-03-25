@@ -1,0 +1,11 @@
+{
+  "projects": [
+    {
+      "name": "replace-with-project-name",
+      "paths": [
+        "../replace-with-your-study/project-name"
+      ],
+      "notes": "Optional supplemental path. OfferLoom only drills deeper when the directory looks like a real project."
+    }
+  ]
+}
