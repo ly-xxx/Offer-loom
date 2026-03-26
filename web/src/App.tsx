@@ -161,8 +161,11 @@ const INTERVIEW_SCROLL_STORAGE_KEY = 'offerloom.interview-scroll.v1'
 const VIEW_STATE_STORAGE_KEY = 'offerloom.view-state.v1'
 const GUIDE_FALLBACK_SECTION_ANCHOR = 'chapter-question-bank'
 const DOCUMENT_SCROLL_VIEWPORT_OFFSET = 104
-const CODEX_DOCK_RESERVE_WIDTH = 492
-const MIN_DOC_STAGE_WIDTH_WITH_CODEX_DOCK = 980
+const CODEX_FLOAT_DEFAULT_WIDTH = 432
+const CODEX_DOCK_GAP = 16
+const CODEX_DOCK_VIEWPORT_MARGIN = 16
+const MIN_DOC_STAGE_WIDTH_WITH_CODEX_DOCK = 860
+const MAX_DOC_STAGE_WIDTH_WITH_CODEX_DOCK = 1040
 const DEFAULT_CODEX_DOCK_TOP = 136
 const DEFAULT_UI_STATE: WorkspaceUiState = {
   currentDocumentId: null,
@@ -325,7 +328,9 @@ function App() {
   const [workspaceUi, setWorkspaceUi] = useState<WorkspaceUiState>(() => readWorkspaceUiState())
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [isCodexDefaultDocked, setIsCodexDefaultDocked] = useState(true)
+  const [codexDockLeft, setCodexDockLeft] = useState<number | null>(null)
   const [codexDockTop, setCodexDockTop] = useState(DEFAULT_CODEX_DOCK_TOP)
+  const [codexReservedDocWidth, setCodexReservedDocWidth] = useState<number | null>(null)
   const [expandedGuideKeys, setExpandedGuideKeys] = useState<string[]>([])
   const [expandedInterviewCategoryIds, setExpandedInterviewCategoryIds] = useState<string[]>([])
   const lastIndexJobStatusRef = useRef<string | null>(null)
@@ -333,6 +338,7 @@ function App() {
   const sectionRefs = useRef(new Map<string, HTMLElement>())
   const guideArticleRefs = useRef(new Map<string, HTMLElement>())
   const studyLayoutRef = useRef<HTMLDivElement | null>(null)
+  const mainStageRef = useRef<HTMLElement | null>(null)
   const selectedDocumentIdRef = useRef<string | null>(null)
   const documentScrollStateRef = useRef<Record<string, number>>(readDocumentScrollState())
   const interviewScrollStateRef = useRef<Record<string, number>>(readInterviewScrollState())
@@ -464,21 +470,23 @@ function App() {
   ), [isMobile, viewportWidth, workspaceUi.sidebarWidth])
 
   const effectiveSidebarOpen = isMobile ? mobileSidebarOpen : workspaceUi.sidebarOpen
-  const liveSidebarWidth = !isMobile && effectiveSidebarOpen ? sidebarWidth : 0
   const shouldReserveCodexDockRail = !isMobile
-    && effectiveSidebarOpen
     && isCodexDefaultDocked
-    && viewportWidth - liveSidebarWidth >= CODEX_DOCK_RESERVE_WIDTH + MIN_DOC_STAGE_WIDTH_WITH_CODEX_DOCK
+    && (codexReservedDocWidth ?? 0) >= MIN_DOC_STAGE_WIDTH_WITH_CODEX_DOCK
 
   const appStyle = useMemo(() => (
     buildWorkspaceCssVars(workspaceUi)
   ), [workspaceUi])
 
   const studyLayoutStyle = useMemo(() => ({
-    ['--sidebar-width' as string]: `${sidebarWidth}px`,
-    ['--sidebar-live-width' as string]: `${liveSidebarWidth}px`,
-    ['--codex-dock-reserve' as string]: shouldReserveCodexDockRail ? `${CODEX_DOCK_RESERVE_WIDTH}px` : '0px'
-  }), [liveSidebarWidth, shouldReserveCodexDockRail, sidebarWidth])
+    ['--sidebar-width' as string]: `${sidebarWidth}px`
+  }), [sidebarWidth])
+
+  const docStageStyle = useMemo(() => ({
+    maxWidth: shouldReserveCodexDockRail && codexReservedDocWidth
+      ? `${Math.round(codexReservedDocWidth)}px`
+      : 'none'
+  } satisfies CSSProperties), [codexReservedDocWidth, shouldReserveCodexDockRail])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -490,18 +498,32 @@ function App() {
 
     const updateDockTop = () => {
       frameId = window.requestAnimationFrame(() => {
-        const nextTop = readDockTopFromLayout(studyLayoutRef)
-        setCodexDockTop((current) => Math.abs(current - nextTop) < 1 ? current : nextTop)
+        const nextMetrics = readCodexDockMetrics({
+          layoutRef: studyLayoutRef,
+          mainRef: mainStageRef
+        })
+        setCodexDockLeft((current) => current === nextMetrics.left ? current : nextMetrics.left)
+        setCodexDockTop((current) => Math.abs(current - nextMetrics.top) < 1 ? current : nextMetrics.top)
+        setCodexReservedDocWidth((current) => (
+          current !== null && nextMetrics.reserveWidth !== null && Math.abs(current - nextMetrics.reserveWidth) < 1
+            ? current
+            : nextMetrics.reserveWidth
+        ))
       })
     }
 
     updateDockTop()
 
-    if (typeof ResizeObserver !== 'undefined' && studyLayoutRef.current) {
+    if (typeof ResizeObserver !== 'undefined') {
       observer = new ResizeObserver(() => {
         updateDockTop()
       })
-      observer.observe(studyLayoutRef.current)
+      if (studyLayoutRef.current) {
+        observer.observe(studyLayoutRef.current)
+      }
+      if (mainStageRef.current) {
+        observer.observe(mainStageRef.current)
+      }
     }
 
     window.addEventListener('resize', updateDockTop)
@@ -512,7 +534,7 @@ function App() {
       observer?.disconnect()
       window.removeEventListener('resize', updateDockTop)
     }
-  }, [deferredSearch, effectiveSidebarOpen, isMobile, searchPreview, sidebarWidth, statusNote, workspaceUi.sidebarTab])
+  }, [deferredSearch, effectiveSidebarOpen, isMobile, searchPreview, sidebarWidth, statusNote, workspaceUi.sidebarTab, shouldReserveCodexDockRail, viewportWidth])
 
   const sidebarToggleStyle = useMemo(() => {
     if (isMobile) {
@@ -2121,7 +2143,7 @@ function App() {
 
       <div
         ref={studyLayoutRef}
-        className={`study-layout ${effectiveSidebarOpen ? '' : 'sidebar-collapsed'} ${isMobile ? 'is-mobile' : ''} ${shouldReserveCodexDockRail ? 'has-codex-dock-rail' : ''}`}
+        className={`study-layout ${effectiveSidebarOpen ? '' : 'sidebar-collapsed'} ${isMobile ? 'is-mobile' : ''}`}
         style={studyLayoutStyle}
       >
         <button
@@ -2171,7 +2193,7 @@ function App() {
           </aside>
         ) : null}
 
-        <main className={`doc-stage ${shouldReserveCodexDockRail ? 'codex-dock-reserved' : ''}`}>
+        <main ref={mainStageRef} className={`doc-stage ${shouldReserveCodexDockRail ? 'codex-dock-reserved' : ''}`} style={docStageStyle}>
           {workspaceUi.sidebarTab === 'interviews' ? (
             questionList.length > 0 ? (
               activeInterviewQuestion ? (
@@ -2285,6 +2307,7 @@ function App() {
       <FloatingCodexWindow
         autoReferenceCurrentDoc={autoReferenceCurrentDoc}
         currentDocument={activeDocument}
+        defaultDockLeft={codexDockLeft ?? undefined}
         defaultDockTop={codexDockTop}
         documents={documents}
         model={model}
@@ -4066,18 +4089,54 @@ function getDocumentScrollBaseTop(documentId: string) {
   return Math.max(0, Math.round(node.getBoundingClientRect().top + window.scrollY - DOCUMENT_SCROLL_VIEWPORT_OFFSET))
 }
 
-function readDockTopFromLayout(layoutRef: RefObject<HTMLDivElement | null>) {
+function readCodexDockMetrics(props: {
+  layoutRef: RefObject<HTMLDivElement | null>
+  mainRef: RefObject<HTMLElement | null>
+}) {
   if (typeof window === 'undefined') {
-    return DEFAULT_CODEX_DOCK_TOP
+    return {
+      left: null,
+      reserveWidth: null,
+      top: DEFAULT_CODEX_DOCK_TOP
+    }
   }
 
+  const layoutRect = props.layoutRef.current?.getBoundingClientRect() ?? null
+  const fallbackLeft = Math.max(CODEX_DOCK_VIEWPORT_MARGIN, window.innerWidth - CODEX_FLOAT_DEFAULT_WIDTH - CODEX_DOCK_VIEWPORT_MARGIN)
   const fallbackTop = clampNumber(DEFAULT_CODEX_DOCK_TOP, 92, Math.max(92, window.innerHeight - 180), DEFAULT_CODEX_DOCK_TOP)
-  const layoutRect = layoutRef.current?.getBoundingClientRect()
-  if (!layoutRect) {
-    return fallbackTop
+  const mainRect = props.mainRef.current?.getBoundingClientRect()
+  if (!mainRect) {
+    return {
+      left: fallbackLeft,
+      reserveWidth: null,
+      top: fallbackTop
+    }
   }
 
-  return clampNumber(layoutRect.top + 2, 92, Math.max(92, window.innerHeight - 180), fallbackTop)
+  const mainLeft = Math.round(mainRect.left)
+  const top = clampNumber(Math.round(mainRect.top), 92, Math.max(92, window.innerHeight - 180), fallbackTop)
+  const rightBoundary = Math.max(
+    CODEX_DOCK_VIEWPORT_MARGIN + CODEX_FLOAT_DEFAULT_WIDTH,
+    Math.min(
+      Math.round(layoutRect?.right ?? window.innerWidth - CODEX_DOCK_VIEWPORT_MARGIN),
+      window.innerWidth - CODEX_DOCK_VIEWPORT_MARGIN
+    )
+  )
+  const availableStageWidth = Math.max(0, rightBoundary - mainLeft)
+  const preferredDocWidth = Math.min(
+    MAX_DOC_STAGE_WIDTH_WITH_CODEX_DOCK,
+    Math.max(0, availableStageWidth - CODEX_FLOAT_DEFAULT_WIDTH - CODEX_DOCK_GAP)
+  )
+  const preferredDockLeft = Math.round(mainLeft + preferredDocWidth + CODEX_DOCK_GAP)
+  const maxDockLeft = Math.max(CODEX_DOCK_VIEWPORT_MARGIN, rightBoundary - CODEX_FLOAT_DEFAULT_WIDTH)
+  const left = clampNumber(preferredDockLeft, CODEX_DOCK_VIEWPORT_MARGIN, maxDockLeft, fallbackLeft)
+  const reserveWidth = Math.max(0, left - mainLeft - CODEX_DOCK_GAP)
+
+  return {
+    left,
+    reserveWidth,
+    top
+  }
 }
 
 function buildWorkspaceCssVars(workspaceUi: WorkspaceUiState) {

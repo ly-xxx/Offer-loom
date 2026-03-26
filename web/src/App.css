@@ -408,10 +408,6 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-.study-layout.has-codex-dock-rail {
-  --doc-stage-safe-width: calc(100vw - var(--sidebar-live-width) - var(--codex-dock-reserve) - 56px);
-}
-
 .sidebar-rail-toggle {
   position: fixed;
   top: 50vh;
@@ -472,6 +468,8 @@
   grid-column: 2;
   min-width: 0;
   width: 100%;
+  justify-self: stretch;
+  transition: max-width 180ms ease;
 }
 
 .study-layout.sidebar-collapsed .doc-stage {
@@ -480,7 +478,7 @@
 
 .doc-stage.codex-dock-reserved {
   justify-self: start;
-  width: min(100%, var(--doc-stage-safe-width));
+  width: 100%;
 }
 
 .sidebar-mobile-backdrop {

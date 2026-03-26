@@ -70,6 +70,7 @@ type ConsoleMessage =
 type Props = {
   autoReferenceCurrentDoc: boolean
   currentDocument: DocumentData | null
+  defaultDockLeft?: number
   defaultDockTop?: number
   documents: DocumentListItem[]
   model: string
@@ -98,6 +99,7 @@ export function FloatingCodexWindow(props: Props) {
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
   const [runningJobId, setRunningJobId] = useState<string | null>(null)
   const [frame, setFrame] = useState<FloatFrame>(() => buildDefaultFloatFrame({
+    defaultDockLeft: props.defaultDockLeft,
     defaultDockTop: props.defaultDockTop,
     isCollapsed: false,
     isMobile: typeof window === 'undefined' ? false : window.matchMedia('(max-width: 980px)').matches
@@ -113,10 +115,11 @@ export function FloatingCodexWindow(props: Props) {
   const messageEndRef = useRef<HTMLDivElement | null>(null)
   const deferredReferenceQuery = useDeferredValue(referenceQuery.trim().toLowerCase())
   const defaultFrame = useMemo(() => buildDefaultFloatFrame({
+    defaultDockLeft: props.defaultDockLeft,
     defaultDockTop: props.defaultDockTop,
     isCollapsed,
     isMobile
-  }), [isCollapsed, isMobile, props.defaultDockTop])
+  }), [isCollapsed, isMobile, props.defaultDockLeft, props.defaultDockTop])
 
   const selectedReferenceDocs = useMemo(() => {
     const byId = new Map(props.documents.map((item) => [item.id, item]))
@@ -220,6 +223,14 @@ export function FloatingCodexWindow(props: Props) {
     )
   }
 
+  const releaseDefaultDock = () => {
+    if (!isDefaultDocked) {
+      return
+    }
+    setIsDefaultDocked(false)
+    props.onDockingStateChange?.(false)
+  }
+
   const dragStart = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('button, input, select, textarea, label')) {
       return
@@ -236,7 +247,7 @@ export function FloatingCodexWindow(props: Props) {
     if (!currentDrag) {
       return
     }
-    setIsDefaultDocked(false)
+    releaseDefaultDock()
     setFrame((current) => clampFrame({
       ...current,
       x: event.clientX - currentDrag.offsetX,
@@ -252,7 +263,7 @@ export function FloatingCodexWindow(props: Props) {
   }
 
   const resizeStart = (direction: ResizeDirection) => (event: ReactPointerEvent<HTMLDivElement>) => {
-    setIsDefaultDocked(false)
+    releaseDefaultDock()
     resizeState.current = {
       direction,
       frame,
@@ -840,6 +851,7 @@ function clampFrame(frame: FloatFrame, isCollapsed: boolean) {
 }
 
 function buildDefaultFloatFrame(props: {
+  defaultDockLeft?: number
   defaultDockTop?: number
   isCollapsed: boolean
   isMobile: boolean
@@ -872,11 +884,12 @@ function buildDefaultFloatFrame(props: {
   const top = clamp(props.defaultDockTop ?? 136, 88, Math.max(88, window.innerHeight - 180))
   const expandedHeight = clamp(window.innerHeight - top - 18, 520, 1040)
   const height = props.isCollapsed ? 72 : expandedHeight
+  const defaultLeft = props.defaultDockLeft ?? (window.innerWidth - width - 24)
 
   return clampFrame({
     height,
     width,
-    x: window.innerWidth - width - 24,
+    x: defaultLeft,
     y: top
   }, props.isCollapsed)
 }
