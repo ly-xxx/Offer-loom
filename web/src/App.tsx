@@ -20,16 +20,20 @@ import rehypeKatex from 'rehype-katex'
 import {
   ArrowUpRight,
   Activity,
+  BellDot,
   Briefcase,
   BookOpenText,
   BrainCircuit,
+  CheckCircle2,
   ChevronLeft,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   Plus,
   Search,
   Settings2,
-  Sparkles
+  Sparkles,
+  X
 } from 'lucide-react'
 
 import {
@@ -132,6 +136,7 @@ type PaneNavigationSection = {
 }
 type InterviewStageSectionKind =
   | 'source'
+  | 'generation_history'
   | 'elevator_pitch'
   | 'project_bridge'
   | 'full_answer'
@@ -153,6 +158,13 @@ type InterviewerSession = {
   questionTitle: string
   seedFollowUp: string
   sessionKey: string
+}
+type JobToast = {
+  id: string
+  jobId: string
+  message: string
+  status: 'cancelled' | 'failed' | 'ready'
+  title: string
 }
 
 const UI_STATE_STORAGE_KEY = 'offerloom.workspace-ui.v1'
@@ -325,6 +337,8 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [activeIndexJobId, setActiveIndexJobId] = useState<string | null>(null)
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null)
+  const [jobToasts, setJobToasts] = useState<JobToast[]>([])
+  const [unreadCompletedJobIds, setUnreadCompletedJobIds] = useState<string[]>([])
   const [workspaceUi, setWorkspaceUi] = useState<WorkspaceUiState>(() => readWorkspaceUiState())
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [isCodexDefaultDocked, setIsCodexDefaultDocked] = useState(true)
@@ -347,6 +361,8 @@ function App() {
   const scrollSpyLockRef = useRef<{ anchor: string; expiresAt: number } | null>(null)
   const guideSelectionSourceRef = useRef<SelectionUpdateSource>('navigation')
   const guideNavigationLockRef = useRef<{ documentId: string; expiresAt: number } | null>(null)
+  const agentJobStatusRef = useRef<Map<string, AgentJob['status']>>(new Map())
+  const hasHydratedAgentJobsRef = useRef(false)
   const lastViewportKeyRef = useRef<string | null>(null)
   const deferredSearch = useDeferredValue(globalSearch)
   const isMobile = useMediaQuery('(max-width: 980px)')
@@ -790,6 +806,25 @@ function App() {
     setLiveRefreshAt(new Date().toLocaleTimeString())
   })
 
+  const applyQuestionDetailUpdate = useEffectEvent((detail: QuestionDetail) => {
+    setQuestionCache((current) => ({
+      ...current,
+      [detail.id]: detail
+    }))
+    setSelectedInterviewQuestion((current) => current?.id === detail.id ? detail : current)
+    setQuestionList((current) => current.map((item) => (
+      item.id === detail.id ? mergeQuestionListItemWithDetail(item, detail) : item
+    )))
+    setDocumentCache((current) => patchQuestionAcrossDocuments(current, detail))
+    setSelectedDocument((current) => current ? patchQuestionInsideDocument(current, detail) : current)
+  })
+
+  const syncQuestionArtifacts = useEffectEvent(async (questionId: string) => {
+    const detail = await fetchQuestionDetail(questionId)
+    applyQuestionDetailUpdate(detail)
+    return detail
+  })
+
   const primeDocumentCache = useEffectEvent(async (documentIds: string[]) => {
     const missing = documentIds.filter((id) => !documentCache[id])
     if (missing.length === 0) {
@@ -1014,6 +1049,8 @@ function App() {
         const jobs = await fetchAgentJobs()
         if (!cancelled) {
           setAgentJobs(jobs)
+          agentJobStatusRef.current = new Map(jobs.map((job) => [job.id, job.status]))
+          hasHydratedAgentJobsRef.current = true
         }
       } catch {}
     }
@@ -1023,6 +1060,30 @@ function App() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const latestByQuestionId: QuestionJobMap = {}
+
+    for (const job of agentJobs) {
+      if (job.kind !== 'answer') {
+        continue
+      }
+
+      const current = latestByQuestionId[job.questionId]
+      if (!current || compareJobTimestamps(job, current) > 0) {
+        latestByQuestionId[job.questionId] = job
+      }
+    }
+
+    setQuestionJobs((current) => {
+      const currentKeys = Object.keys(current)
+      const nextKeys = Object.keys(latestByQuestionId)
+      if (currentKeys.length === nextKeys.length && nextKeys.every((key) => current[key]?.id === latestByQuestionId[key]?.id && current[key]?.status === latestByQuestionId[key]?.status)) {
+        return current
+      }
+      return latestByQuestionId
+    })
+  }, [agentJobs])
 
   useEffect(() => {
     const shouldPoll = settingsOpen
@@ -1056,6 +1117,55 @@ function App() {
   }, [activeIndexJobId, agentJobs, jobsOpen, settingsOpen])
 
   useEffect(() => {
+    if (!hasHydratedAgentJobsRef.current) {
+      return
+    }
+
+    const previousStatuses = agentJobStatusRef.current
+    const nextStatuses = new Map(agentJobs.map((job) => [job.id, job.status]))
+    const completedTransitions = agentJobs.filter((job) => {
+      const previous = previousStatuses.get(job.id)
+      return Boolean(previous)
+        && (previous === 'queued' || previous === 'running')
+        && (job.status === 'ready' || job.status === 'failed' || job.status === 'cancelled')
+    })
+
+    agentJobStatusRef.current = nextStatuses
+
+    if (completedTransitions.length === 0) {
+      return
+    }
+
+    for (const job of completedTransitions) {
+      if (job.kind === 'answer') {
+        void syncQuestionArtifacts(job.questionId)
+      }
+
+      if (!(jobsOpen || selectedAgentJobId === job.id)) {
+        setUnreadCompletedJobIds((current) => (
+          current.includes(job.id) ? current : [...current, job.id]
+        ))
+      }
+
+      setJobToasts((current) => {
+        const toast = buildJobToast(job)
+        if (!toast || current.some((item) => item.id === toast.id)) {
+          return current
+        }
+        return [...current, toast]
+      })
+    }
+  }, [agentJobs, jobsOpen, selectedAgentJobId, syncQuestionArtifacts])
+
+  useEffect(() => {
+    if (!jobsOpen) {
+      return
+    }
+
+    setUnreadCompletedJobIds([])
+  }, [jobsOpen])
+
+  useEffect(() => {
     if (!selectedAgentJobId) {
       setSelectedAgentJob(null)
       setAgentPromptDraft('')
@@ -1085,6 +1195,22 @@ function App() {
       cancelled = true
     }
   }, [selectedAgentJobId])
+
+  useEffect(() => {
+    if (jobToasts.length === 0) {
+      return
+    }
+
+    const timers = jobToasts.map((toast) => (
+      window.setTimeout(() => {
+        setJobToasts((current) => current.filter((item) => item.id !== toast.id))
+      }, 5000)
+    ))
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [jobToasts])
 
   useEffect(() => {
     if (!selectedAgentJobId || !agentJobs.some((job) => job.id === selectedAgentJobId)) {
@@ -1732,6 +1858,7 @@ function App() {
         ...current,
         [questionId]: startedJob
       }))
+      setAgentJobs((current) => [startedJob, ...current.filter((item) => item.id !== startedJob.id)])
 
       let latestJob = startedJob
       while (latestJob.status === 'queued' || latestJob.status === 'running') {
@@ -1741,16 +1868,11 @@ function App() {
           ...current,
           [questionId]: latestJob
         }))
+        setAgentJobs((current) => current.map((item) => item.id === latestJob.id ? latestJob : item))
       }
 
-      const refreshed = await fetchQuestionDetail(questionId)
-      setQuestionCache((current) => ({
-        ...current,
-        [questionId]: refreshed
-      }))
-      setSelectedInterviewQuestion((current) => current?.id === refreshed.id ? refreshed : current)
-      if (activeDocument?.id) {
-        await refreshDocument(activeDocument.id)
+      if (latestJob.status === 'ready') {
+        await syncQuestionArtifacts(questionId)
       }
 
       setStatusNote(
@@ -1831,6 +1953,7 @@ function App() {
 
   const openAgentJob = useEffectEvent((jobId: string) => {
     setSelectedAgentJobId(jobId)
+    setUnreadCompletedJobIds((current) => current.filter((id) => id !== jobId))
   })
 
   const cancelSelectedAgentJob = useEffectEvent(async (jobId: string) => {
@@ -1849,6 +1972,12 @@ function App() {
     try {
       const job = await rerunAgentJob(jobId, prompt)
       setAgentJobs((current) => [job, ...current.filter((item) => item.id !== job.id)])
+      if (job.kind === 'answer') {
+        setQuestionJobs((current) => ({
+          ...current,
+          [job.questionId]: job
+        }))
+      }
       setSelectedAgentJobId(job.id)
       setStatusNote('已基于当前 prompt 重新提交任务')
     } catch (error) {
@@ -2000,7 +2129,11 @@ function App() {
                                   {buildQuestionPresenceSummary(question)}
                                 </span>
                                 <span className={`question-state-pill ${question.generatedStatus === 'ready' ? 'ready' : 'pending'}`}>
-                                  {question.generatedStatus === 'ready' ? '答案已就绪' : '待生成'}
+                                  {question.generatedStatus === 'ready'
+                                    ? question.generatedCount > 1
+                                      ? `${question.generatedCount} 次`
+                                      : '答案已就绪'
+                                    : '待生成'}
                                 </span>
                               </div>
                             </div>
@@ -2090,6 +2223,7 @@ function App() {
             {agentJobs.some((job) => job.status === 'queued' || job.status === 'running') && (
               <span className="inline-badge">{agentJobs.filter((job) => job.status === 'queued' || job.status === 'running').length}</span>
             )}
+            {unreadCompletedJobIds.length > 0 && <span className="toolbar-alert-dot" aria-hidden="true" />}
           </button>
           <button className="ghost-button toolbar-icon-button icon-only" aria-label="添加面经" onClick={() => setImportOpen(true)}>
             <Plus size={16} />
@@ -2098,6 +2232,52 @@ function App() {
       </section>
 
       <div className="workspace-status-note">{statusNote}</div>
+
+      <AnimatePresence initial={false}>
+        {jobToasts.length > 0 && (
+          <div className="job-toast-stack" aria-live="polite">
+            {jobToasts.map((toast) => (
+              <motion.div
+                key={toast.id}
+                className={`job-toast-card ${toast.status}`}
+                initial={{ opacity: 0, x: 24, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 18, y: 6, scale: 0.98 }}
+              >
+                <button
+                  className="job-toast-open"
+                  onClick={() => {
+                    openAgentJob(toast.jobId)
+                    setJobsOpen(true)
+                    setJobToasts((current) => current.filter((item) => item.id !== toast.id))
+                  }}
+                  type="button"
+                >
+                  <span className="job-toast-icon" aria-hidden="true">
+                    {toast.status === 'ready'
+                      ? <CheckCircle2 size={16} />
+                      : toast.status === 'failed'
+                        ? <CircleAlert size={16} />
+                        : <BellDot size={16} />}
+                  </span>
+                  <div className="job-toast-copy">
+                    <strong>{toast.title}</strong>
+                    <p>{toast.message}</p>
+                  </div>
+                </button>
+                <button
+                  aria-label="关闭任务提醒"
+                  className="job-toast-dismiss"
+                  onClick={() => setJobToasts((current) => current.filter((item) => item.id !== toast.id))}
+                  type="button"
+                >
+                  <X size={14} />
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence initial={false}>
         {searchPreview && deferredSearch.trim() && (
@@ -2798,7 +2978,11 @@ function SectionFootnotes(props: {
                 <span className="pill subtle">{question.questionType}</span>
                 <span className="pill subtle">{question.difficulty}</span>
                 <span className={`pill ${question.generatedStatus === 'ready' ? 'success' : ''}`}>
-                  {question.generatedStatus === 'ready' ? '已有个性化答案' : '可现场生成'}
+                  {question.generatedStatus === 'ready'
+                    ? question.generatedCount > 1
+                      ? `已生成 ${question.generatedCount} 次`
+                      : '已有个性化答案'
+                    : '可现场生成'}
                 </span>
               </div>
             </div>
@@ -2808,39 +2992,280 @@ function SectionFootnotes(props: {
       </div>
 
       {groupedQuestions.revisited.length > 0 && (
-        <details className="revisited-group chapter-revisited-group">
-          <summary>前面已经出现过的题目 {groupedQuestions.revisited.length} 条</summary>
-          <div className="revisited-group-body footnote-list">
-            {groupedQuestions.revisited.map((question) => (
-              <button
-                key={question.id}
-                className="footnote-card revisited-footnote-card"
-                onClick={() => {
-                  if (props.onOpenQuestion) {
-                    props.onOpenQuestion(question.id)
-                    return
-                  }
-                  props.onOpen()
-                }}
-              >
-                <div className="footnote-index">↺</div>
-                <div className="footnote-copy">
-                  <QuestionTitle displayText={question.displayText} text={question.text} />
-                  <div className="footnote-meta">
-                    <span className="pill subtle">{question.questionType}</span>
-                    <span className="pill subtle">{question.difficulty}</span>
-                    <span className={`pill ${question.generatedStatus === 'ready' ? 'success' : ''}`}>
-                      {question.generatedStatus === 'ready' ? '已有个性化答案' : '可现场生成'}
-                    </span>
-                  </div>
-                </div>
-                <ArrowUpRight size={16} />
-              </button>
-            ))}
-          </div>
-        </details>
+        <RevisitedQuestionPreview
+          onOpen={() => {
+            if (props.onOpenQuestion) {
+              props.onOpenQuestion(groupedQuestions.revisited[0].id)
+              return
+            }
+            props.onOpen()
+          }}
+          question={groupedQuestions.revisited[0]}
+          remainingCount={groupedQuestions.revisited.length - 1}
+          totalCount={groupedQuestions.revisited.length}
+        />
       )}
     </>
+  )
+}
+
+function RevisitedQuestionPreview(props: {
+  onOpen: () => void
+  question: RelatedQuestion
+  remainingCount: number
+  totalCount: number
+}) {
+  return (
+    <button className="revisited-preview-card" onClick={props.onOpen} type="button">
+      <div className="revisited-preview-head">
+        <span>前面已经出现过的题目</span>
+        <strong>{props.totalCount} 条</strong>
+      </div>
+      <div className="revisited-preview-body">
+        <div className="footnote-copy">
+          <QuestionTitle displayText={props.question.displayText} text={props.question.text} />
+          <div className="footnote-meta">
+            <span className="pill subtle">{props.question.questionType}</span>
+            <span className="pill subtle">{props.question.difficulty}</span>
+            <span className={`pill ${props.question.generatedStatus === 'ready' ? 'success' : ''}`}>
+              {props.question.generatedStatus === 'ready'
+                ? props.question.generatedCount > 1
+                  ? `已生成 ${props.question.generatedCount} 次`
+                  : '已有个性化答案'
+                : '可现场生成'}
+            </span>
+          </div>
+        </div>
+        <ArrowUpRight size={16} />
+      </div>
+      <div className="revisited-preview-foot">
+        <small>
+          {props.remainingCount > 0
+            ? `其余 ${props.remainingCount} 道会在详情里一起展开`
+            : '点击即可进入详情'}
+        </small>
+      </div>
+      <div className="revisited-preview-fade" aria-hidden="true" />
+    </button>
+  )
+}
+
+function GenerationHistoryCard(props: {
+  history: QuestionDetail['generationHistory']
+  latestTime?: string | null
+}) {
+  if (props.history.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="answer-card answer-list-card generation-history-card">
+      <span>生成记录</span>
+      <div className="generation-history-summary">
+        <strong>{props.history.length} 次</strong>
+        <small>{props.latestTime ? `最近一次 ${formatUiDateTime(props.latestTime)}` : '已持久化保存'}</small>
+      </div>
+      <div className="generation-history-list">
+        {props.history.map((entry, index) => (
+          <div key={entry.id} className="generation-history-item">
+            <div>
+              <strong>第 {props.history.length - index} 次</strong>
+              <small>{formatUiDateTime(entry.updatedAt)}</small>
+            </div>
+            <div className="generation-history-meta">
+              <span className="pill subtle">{entry.model}</span>
+              <span className="pill subtle">{entry.reasoningEffort}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function KnowledgeQuestionCard(props: {
+  badgeLabel?: string
+  detail: QuestionDetail | null
+  generatingQuestionId: string | null
+  isRevisited?: boolean
+  job: JobStatus | undefined
+  onGenerate: (questionId: string) => Promise<void> | void
+  onOpenDocument: (documentId: string, tab?: SidebarTab) => void
+  onOpenInterviewerMode: (questionId: string, followUp: string, questionTitle?: string | null) => void
+  question: RelatedQuestion
+}) {
+  const generated = props.detail?.generated?.output ?? props.question.generated
+  const job = props.job
+  const isGenerating = props.generatingQuestionId === props.question.id
+
+  return (
+    <article className={`question-drill-card ${props.isRevisited ? 'revisited-card' : ''}`}>
+      <div className="question-drill-top">
+        <span className="footnote-index">{props.badgeLabel ?? (props.isRevisited ? '↺' : '[1]')}</span>
+        <div className="question-drill-title">
+          <QuestionTitle displayText={props.question.displayText} text={props.question.text} />
+          <div className="footnote-meta">
+            <span className="pill subtle">{props.question.questionType}</span>
+            <span className="pill subtle">{props.question.difficulty}</span>
+            <span className={`pill ${generated ? 'success' : ''}`}>
+              {generated
+                ? props.detail?.generatedCount && props.detail.generatedCount > 1
+                  ? `已生成 ${props.detail.generatedCount} 次`
+                  : '已生成'
+                : '待生成'}
+            </span>
+            {props.detail?.lastGeneratedAt && (
+              <span className="pill subtle">{formatUiDateTime(props.detail.lastGeneratedAt)}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {job && (
+        <div className={`job-banner ${job.status}`}>
+          <strong>任务状态：{job.status}</strong>
+          <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
+        </div>
+      )}
+
+      {generated ? (
+        <div className="question-answer-stack">
+          {generated.elevator_pitch && (
+            <div className="answer-card micro-answer">
+              <span>20 秒开场</span>
+              <p>{generated.elevator_pitch}</p>
+            </div>
+          )}
+
+          {(generated.work_evidence_status || generated.work_evidence_note) && (
+            <div className="answer-card micro-answer">
+              <span>项目依据</span>
+              <div className="grounding-meta-row">
+                {generated.work_evidence_status && (
+                  <span className={`pill grounding-${generated.work_evidence_status}`}>
+                    {describeWorkEvidenceStatus(generated.work_evidence_status)}
+                  </span>
+                )}
+                {generated.work_evidence_note && <p>{generated.work_evidence_note}</p>}
+              </div>
+            </div>
+          )}
+
+          {generated.work_story && (
+            <div className="answer-card micro-answer">
+              <span>项目切入</span>
+              <p>{generated.work_story}</p>
+            </div>
+          )}
+
+          {generated.full_answer_markdown && (
+            <div className="question-answer-markdown chat-answer">
+              <MarkdownRenderer>{generated.full_answer_markdown}</MarkdownRenderer>
+            </div>
+          )}
+
+          {generated.knowledge_map && generated.knowledge_map.length > 0 && (
+            <div className="answer-card answer-grid-card">
+              <span>知识骨架</span>
+              <div className="knowledge-map-grid">
+                {generated.knowledge_map.map((item) => (
+                  <div key={`${props.question.id}-${item.concept}`} className="knowledge-map-chip">
+                    <strong>{item.concept}</strong>
+                    <small>{item.why_it_matters}</small>
+                    <span className={`pill confidence-${item.confidence}`}>{item.confidence}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {generated.missing_basics && generated.missing_basics.length > 0 && (
+            <div className="answer-card answer-list-card">
+              <span>需要顺手补的基础点</span>
+              <div className="answer-bullet-list">
+                {generated.missing_basics.map((item) => (
+                  <div key={`${props.question.id}-${item}`} className="answer-bullet-item">{item}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {props.detail && (
+            <>
+              <GenerationHistoryCard history={props.detail.generationHistory} latestTime={props.detail.lastGeneratedAt} />
+
+              <div className="answer-card question-grounding">
+                <span>项目引用</span>
+                {props.detail.workMatches.length > 0 ? (
+                  <div className="grounding-list">
+                    {props.detail.workMatches.slice(0, 3).map((item) => (
+                      <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
+                        <strong>{item.title}</strong>
+                        <small>{item.path}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : props.detail.workHintMatches.length > 0 ? (
+                  <>
+                    <p className="muted-copy">没有直接项目证据，已回源检查相邻材料，只能作为贴边表达，不能当成同题直证。</p>
+                    <div className="grounding-list">
+                      {props.detail.workHintMatches.slice(0, 3).map((item) => (
+                        <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
+                          <strong>{item.title}</strong>
+                          <small>{item.path}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="muted-copy">当前 `mywork` 里没有足够强的直接项目证据，这道题会以主线知识为主，不硬贴经历。</p>
+                )}
+              </div>
+
+              {generated.follow_ups && generated.follow_ups.length > 0 && (
+                <div className="answer-card answer-list-card">
+                  <span>下一轮高概率追问</span>
+                  <FollowUpInterviewerList
+                    items={generated.follow_ups}
+                    onOpenInterviewerMode={props.onOpenInterviewerMode}
+                    questionId={props.question.id}
+                    questionTitle={props.question.displayText}
+                  />
+                </div>
+              )}
+
+              {props.detail.generated?.citations && props.detail.generated.citations.length > 0 && (
+                <div className="answer-card answer-list-card">
+                  <span>引用回溯</span>
+                  <div className="citation-list">
+                    {props.detail.generated.citations.map((item, citationIndex) => (
+                      <div key={`${props.question.id}-cite-${citationIndex}`} className="citation-chip">
+                        <strong>{item.label}</strong>
+                        <small>{item.path}</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="question-answer-stack">
+          <p className="muted-copy">
+            这个题目还没有现成答案。你可以直接按当前章节为上下文现场生成，这样输出会自然引用当前知识点。
+          </p>
+          <button
+            className="primary-button"
+            disabled={isGenerating}
+            onClick={() => void props.onGenerate(props.question.id)}
+          >
+            <Sparkles size={16} />
+            {isGenerating ? '生成中…' : '生成个性化答案'}
+          </button>
+        </div>
+      )}
+    </article>
   )
 }
 
@@ -2890,343 +3315,44 @@ function KnowledgePanel(props: {
         >
           <div className="knowledge-panel-body">
             {freshQuestions.map((question, index) => {
-              const detail = props.questionCache[question.id]
-              const generated = detail?.generated?.output ?? question.generated
-              const job = props.jobs[question.id]
-              const isGenerating = props.generatingQuestionId === question.id
-
               return (
-                <article key={question.id} className="question-drill-card">
-                  <div className="question-drill-top">
-                    <span className="footnote-index">[{index + 1}]</span>
-                    <div className="question-drill-title">
-                      <QuestionTitle displayText={question.displayText} text={question.text} />
-                      <div className="footnote-meta">
-                        <span className="pill subtle">{question.questionType}</span>
-                        <span className="pill subtle">{question.difficulty}</span>
-                        <span className={`pill ${generated ? 'success' : ''}`}>
-                          {generated ? '已生成' : '待生成'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {job && (
-                    <div className={`job-banner ${job.status}`}>
-                      <strong>任务状态：{job.status}</strong>
-                      <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
-                    </div>
-                  )}
-
-                  {generated ? (
-                    <div className="question-answer-stack">
-                      {generated.elevator_pitch && (
-                        <div className="answer-card micro-answer">
-                          <span>20 秒开场</span>
-                          <p>{generated.elevator_pitch}</p>
-                        </div>
-                      )}
-
-                      {(generated.work_evidence_status || generated.work_evidence_note) && (
-                        <div className="answer-card micro-answer">
-                          <span>项目依据</span>
-                          <div className="grounding-meta-row">
-                            {generated.work_evidence_status && (
-                              <span className={`pill grounding-${generated.work_evidence_status}`}>
-                                {describeWorkEvidenceStatus(generated.work_evidence_status)}
-                              </span>
-                            )}
-                            {generated.work_evidence_note && <p>{generated.work_evidence_note}</p>}
-                          </div>
-                        </div>
-                      )}
-
-                      {generated.work_story && (
-                        <div className="answer-card micro-answer">
-                          <span>项目切入</span>
-                          <p>{generated.work_story}</p>
-                        </div>
-                      )}
-
-                      {generated.full_answer_markdown && (
-                        <div className="question-answer-markdown chat-answer">
-                          <MarkdownRenderer>{generated.full_answer_markdown}</MarkdownRenderer>
-                        </div>
-                      )}
-
-                      {generated.knowledge_map && generated.knowledge_map.length > 0 && (
-                        <div className="answer-card answer-grid-card">
-                          <span>知识骨架</span>
-                          <div className="knowledge-map-grid">
-                            {generated.knowledge_map.map((item) => (
-                              <div key={`${question.id}-${item.concept}`} className="knowledge-map-chip">
-                                <strong>{item.concept}</strong>
-                                <small>{item.why_it_matters}</small>
-                                <span className={`pill confidence-${item.confidence}`}>{item.confidence}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {generated.missing_basics && generated.missing_basics.length > 0 && (
-                        <div className="answer-card answer-list-card">
-                          <span>需要顺手补的基础点</span>
-                          <div className="answer-bullet-list">
-                            {generated.missing_basics.map((item) => (
-                              <div key={`${question.id}-${item}`} className="answer-bullet-item">{item}</div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {detail && (
-                        <>
-                          <div className="answer-card question-grounding">
-                            <span>项目引用</span>
-                            {detail.workMatches.length > 0 ? (
-                              <div className="grounding-list">
-                                {detail.workMatches.slice(0, 3).map((item) => (
-                                  <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
-                                    <strong>{item.title}</strong>
-                                    <small>{item.path}</small>
-                                  </button>
-                                ))}
-                              </div>
-                            ) : detail.workHintMatches.length > 0 ? (
-                              <>
-                                <p className="muted-copy">没有直接项目证据，已回源检查相邻材料，只能作为贴边表达，不能当成同题直证。</p>
-                                <div className="grounding-list">
-                                  {detail.workHintMatches.slice(0, 3).map((item) => (
-                                    <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
-                                      <strong>{item.title}</strong>
-                                      <small>{item.path}</small>
-                                    </button>
-                                  ))}
-                                </div>
-                              </>
-                            ) : (
-                              <p className="muted-copy">当前 `mywork` 里没有足够强的直接项目证据，这道题会以主线知识为主，不硬贴经历。</p>
-                            )}
-                          </div>
-
-                          {generated.follow_ups && generated.follow_ups.length > 0 && (
-                            <div className="answer-card answer-list-card">
-                              <span>下一轮高概率追问</span>
-                              <FollowUpInterviewerList
-                                items={generated.follow_ups}
-                                onOpenInterviewerMode={props.onOpenInterviewerMode}
-                                questionId={question.id}
-                                questionTitle={question.displayText}
-                              />
-                            </div>
-                          )}
-
-                          {detail.generated?.citations && detail.generated.citations.length > 0 && (
-                            <div className="answer-card answer-list-card">
-                              <span>引用回溯</span>
-                              <div className="citation-list">
-                                {detail.generated.citations.map((item, citationIndex) => (
-                                  <div key={`${question.id}-cite-${citationIndex}`} className="citation-chip">
-                                    <strong>{item.label}</strong>
-                                    <small>{item.path}</small>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="question-answer-stack">
-                      <p className="muted-copy">
-                        这个题目还没有现成答案。你可以直接按当前章节为上下文现场生成，这样输出会自然引用当前知识点。
-                      </p>
-                      <button
-                        className="primary-button"
-                        disabled={isGenerating}
-                        onClick={() => void props.onGenerate(question.id)}
-                      >
-                        <Sparkles size={16} />
-                        {isGenerating ? '生成中…' : '生成个性化答案'}
-                      </button>
-                    </div>
-                  )}
-                </article>
+                <KnowledgeQuestionCard
+                  key={question.id}
+                  badgeLabel={`[${index + 1}]`}
+                  detail={props.questionCache[question.id] ?? null}
+                  generatingQuestionId={props.generatingQuestionId}
+                  job={props.jobs[question.id]}
+                  onGenerate={props.onGenerate}
+                  onOpenDocument={props.onOpenDocument}
+                  onOpenInterviewerMode={props.onOpenInterviewerMode}
+                  question={question}
+                />
               )
             })}
 
             {revisitedQuestions.length > 0 && (
-              <details className="revisited-group" open={false}>
-                <summary>前面已经出现过的题目 {revisitedQuestions.length} 条</summary>
-                <div className="revisited-group-body">
-                  {revisitedQuestions.map((question) => {
-                    const detail = props.questionCache[question.id]
-                    const generated = detail?.generated?.output ?? question.generated
-                    const job = props.jobs[question.id]
-                    const isGenerating = props.generatingQuestionId === question.id
-
-                    return (
-                      <article key={question.id} className="question-drill-card revisited-card">
-                        <div className="question-drill-top">
-                          <span className="footnote-index">↺</span>
-                          <div className="question-drill-title">
-                            <QuestionTitle displayText={question.displayText} text={question.text} />
-                            <div className="footnote-meta">
-                              <span className="pill subtle">{question.questionType}</span>
-                              <span className="pill subtle">{question.difficulty}</span>
-                              <span className={`pill ${generated ? 'success' : ''}`}>
-                                {generated ? '已生成' : '待生成'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {job && (
-                          <div className={`job-banner ${job.status}`}>
-                            <strong>任务状态：{job.status}</strong>
-                            <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
-                          </div>
-                        )}
-
-                        {generated ? (
-                          <div className="question-answer-stack">
-                            {(generated.work_evidence_status || generated.work_evidence_note) && (
-                              <div className="answer-card micro-answer">
-                                <span>项目依据</span>
-                                <div className="grounding-meta-row">
-                                  {generated.work_evidence_status && (
-                                    <span className={`pill grounding-${generated.work_evidence_status}`}>
-                                      {describeWorkEvidenceStatus(generated.work_evidence_status)}
-                                    </span>
-                                  )}
-                                  {generated.work_evidence_note && <p>{generated.work_evidence_note}</p>}
-                                </div>
-                              </div>
-                            )}
-
-                            {generated.elevator_pitch && (
-                              <div className="answer-card micro-answer">
-                                <span>20 秒开场</span>
-                                <p>{generated.elevator_pitch}</p>
-                              </div>
-                            )}
-
-                            {generated.work_story && (
-                              <div className="answer-card micro-answer">
-                                <span>项目切入</span>
-                                <p>{generated.work_story}</p>
-                              </div>
-                            )}
-
-                            {generated.full_answer_markdown && (
-                              <div className="question-answer-markdown chat-answer">
-                                <MarkdownRenderer>{generated.full_answer_markdown}</MarkdownRenderer>
-                              </div>
-                            )}
-
-                            {generated.knowledge_map && generated.knowledge_map.length > 0 && (
-                              <div className="answer-card answer-grid-card">
-                                <span>知识骨架</span>
-                                <div className="knowledge-map-grid">
-                                  {generated.knowledge_map.map((item) => (
-                                    <div key={`${question.id}-${item.concept}`} className="knowledge-map-chip">
-                                      <strong>{item.concept}</strong>
-                                      <small>{item.why_it_matters}</small>
-                                      <span className={`pill confidence-${item.confidence}`}>{item.confidence}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {generated.missing_basics && generated.missing_basics.length > 0 && (
-                              <div className="answer-card answer-list-card">
-                                <span>需要顺手补的基础点</span>
-                                <div className="answer-bullet-list">
-                                  {generated.missing_basics.map((item) => (
-                                    <div key={`${question.id}-${item}`} className="answer-bullet-item">{item}</div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {detail && (
-                              <>
-                                <div className="answer-card question-grounding">
-                                  <span>项目引用</span>
-                                  {detail.workMatches.length > 0 ? (
-                                    <div className="grounding-list">
-                                      {detail.workMatches.slice(0, 3).map((item) => (
-                                        <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
-                                          <strong>{item.title}</strong>
-                                          <small>{item.path}</small>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : detail.workHintMatches.length > 0 ? (
-                                    <>
-                                      <p className="muted-copy">没有直接项目证据，已回源检查相邻材料，只能作为贴边表达，不能当成同题直证。</p>
-                                      <div className="grounding-list">
-                                        {detail.workHintMatches.slice(0, 3).map((item) => (
-                                          <button key={item.id} className="grounding-chip grounding-chip-button" onClick={() => props.onOpenDocument(item.id, 'mywork')}>
-                                            <strong>{item.title}</strong>
-                                            <small>{item.path}</small>
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <p className="muted-copy">当前 `mywork` 里没有足够强的直接项目证据，这道题会以主线知识为主，不硬贴经历。</p>
-                                  )}
-                                </div>
-
-                                {generated.follow_ups && generated.follow_ups.length > 0 && (
-                                  <div className="answer-card answer-list-card">
-                                    <span>下一轮高概率追问</span>
-                                    <FollowUpInterviewerList
-                                      items={generated.follow_ups}
-                                      onOpenInterviewerMode={props.onOpenInterviewerMode}
-                                      questionId={question.id}
-                                      questionTitle={question.displayText}
-                                    />
-                                  </div>
-                                )}
-
-                                {detail.generated?.citations && detail.generated.citations.length > 0 && (
-                                  <div className="answer-card answer-list-card">
-                                    <span>引用回溯</span>
-                                    <div className="citation-list">
-                                      {detail.generated.citations.map((item, citationIndex) => (
-                                        <div key={`${question.id}-cite-${citationIndex}`} className="citation-chip">
-                                          <strong>{item.label}</strong>
-                                          <small>{item.path}</small>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="question-answer-stack">
-                            <button
-                              className="primary-button"
-                              disabled={isGenerating}
-                              onClick={() => void props.onGenerate(question.id)}
-                            >
-                              <Sparkles size={16} />
-                              {isGenerating ? '生成中…' : '生成个性化答案'}
-                            </button>
-                          </div>
-                        )}
-                      </article>
-                    )
-                  })}
+              <>
+                <div className="revisited-section-divider">
+                  <span>前面已经出现过</span>
+                  <small>{revisitedQuestions.length} 条，这里全量展开，方便对照新答案与旧知识点。</small>
                 </div>
-              </details>
+                <div className="revisited-group-body open">
+                  {revisitedQuestions.map((question) => (
+                    <KnowledgeQuestionCard
+                      key={question.id}
+                      badgeLabel="↺"
+                      detail={props.questionCache[question.id] ?? null}
+                      generatingQuestionId={props.generatingQuestionId}
+                      isRevisited
+                      job={props.jobs[question.id]}
+                      onGenerate={props.onGenerate}
+                      onOpenDocument={props.onOpenDocument}
+                      onOpenInterviewerMode={props.onOpenInterviewerMode}
+                      question={question}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </OverlayDrawer>
@@ -3377,6 +3503,21 @@ function InterviewQuestionStage(props: {
       )
     }
 
+    if (section.kind === 'generation_history' && props.question.generationHistory.length > 0) {
+      return (
+        <>
+          <div className="footnote-heading">
+            <span>{section.kicker}</span>
+            <strong>{section.heading}</strong>
+          </div>
+          <GenerationHistoryCard
+            history={props.question.generationHistory}
+            latestTime={props.question.lastGeneratedAt}
+          />
+        </>
+      )
+    }
+
     if (section.kind === 'project_bridge' && (generated?.work_evidence_status || generated?.work_evidence_note || generated?.work_story)) {
       return (
         <>
@@ -3519,6 +3660,12 @@ function InterviewQuestionStage(props: {
             <span className={`sub-chip ${generated ? 'accent' : ''}`}>
               {generated ? '已生成个性化答案' : '待生成'}
             </span>
+            {props.question.generatedCount > 0 && (
+              <span className="sub-chip">{props.question.generatedCount} 次生成</span>
+            )}
+            {props.question.lastGeneratedAt && (
+              <span className="sub-chip">{formatUiDateTime(props.question.lastGeneratedAt)}</span>
+            )}
           </div>
           <div className="interview-stage-question-title">
             <QuestionTitle displayText={props.question.displayText} text={props.question.text} />
@@ -3623,6 +3770,7 @@ function buildInterviewCategoryGroups(questions: QuestionListItem[]): InterviewC
         || right.guideLinkCount - left.guideLinkCount
         || right.guideFallbackCount - left.guideFallbackCount
         || Number(right.generatedStatus === 'ready') - Number(left.generatedStatus === 'ready')
+        || right.generatedCount - left.generatedCount
         || left.displayText.localeCompare(right.displayText, 'zh-Hans-CN')
       ))
     }))
@@ -3664,6 +3812,16 @@ function buildInterviewStageSections(question: QuestionDetail): InterviewStageSe
       kicker: 'SOURCE'
     }
   ]
+
+  if (question.generationHistory.length > 0) {
+    sections.push({
+      anchor: 'generation-history',
+      badge: question.generationHistory.length,
+      heading: '生成记录',
+      kind: 'generation_history',
+      kicker: 'HISTORY'
+    })
+  }
 
   if (!generated) {
     sections.push({
@@ -3875,6 +4033,107 @@ function buildQuestionTitleParts(displayText: string | null | undefined, fallbac
     primary: original,
     secondary: null
   }
+}
+
+function formatUiDateTime(value: string) {
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      month: 'numeric',
+      day: 'numeric'
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+function mergeQuestionListItemWithDetail(item: QuestionListItem, detail: QuestionDetail): QuestionListItem {
+  return {
+    ...item,
+    generatedCount: detail.generatedCount,
+    generatedStatus: detail.generated?.status ?? item.generatedStatus,
+    lastGeneratedAt: detail.lastGeneratedAt
+  }
+}
+
+function mergeRelatedQuestionWithDetail(question: RelatedQuestion, detail: QuestionDetail): RelatedQuestion {
+  return question.id === detail.id
+    ? {
+        ...question,
+        generated: detail.generated?.output ?? question.generated,
+        generatedCount: detail.generatedCount,
+        generatedStatus: detail.generated?.status ?? question.generatedStatus,
+        lastGeneratedAt: detail.lastGeneratedAt
+      }
+    : question
+}
+
+function patchQuestionInsideDocument(document: DocumentData, detail: QuestionDetail): DocumentData {
+  return {
+    ...document,
+    looseRelatedQuestions: document.looseRelatedQuestions.map((question) => mergeRelatedQuestionWithDetail(question, detail)),
+    sections: document.sections.map((section) => ({
+      ...section,
+      relatedQuestions: section.relatedQuestions.map((question) => mergeRelatedQuestionWithDetail(question, detail))
+    }))
+  }
+}
+
+function patchQuestionAcrossDocuments(cache: Record<string, DocumentData>, detail: QuestionDetail) {
+  const next: Record<string, DocumentData> = {}
+  for (const [documentId, document] of Object.entries(cache)) {
+    next[documentId] = patchQuestionInsideDocument(document, detail)
+  }
+  return next
+}
+
+function compareJobTimestamps(left: Pick<AgentJob, 'finishedAt' | 'startedAt'>, right: Pick<AgentJob, 'finishedAt' | 'startedAt'>) {
+  const leftStamp = left.finishedAt ?? left.startedAt
+  const rightStamp = right.finishedAt ?? right.startedAt
+  return leftStamp.localeCompare(rightStamp, 'en')
+}
+
+function buildJobToast(job: AgentJob): JobToast | null {
+  if (job.status !== 'ready' && job.status !== 'failed' && job.status !== 'cancelled') {
+    return null
+  }
+
+  const title = summarizeAgentJobTitle(job)
+  if (job.status === 'ready') {
+    return {
+      id: `toast:${job.id}:${job.status}`,
+      jobId: job.id,
+      message: '结果已持久化保存，正文和题目状态会立即同步。',
+      status: 'ready',
+      title
+    }
+  }
+
+  return {
+    id: `toast:${job.id}:${job.status}`,
+    jobId: job.id,
+    message: job.error ?? '这次运行没有正常完成，可以到任务中心查看或重跑。',
+    status: job.status,
+    title
+  }
+}
+
+function summarizeAgentJobTitle(job: AgentJob) {
+  if ('questionText' in job && job.questionText?.trim()) {
+    return trimUiText(job.questionText, 56)
+  }
+  if ('messagePreview' in job && job.messagePreview?.trim()) {
+    return trimUiText(job.messagePreview, 56)
+  }
+  if (job.kind === 'index') {
+    return '索引构建'
+  }
+  return job.summary || '后台任务'
+}
+
+function trimUiText(value: string, limit: number) {
+  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value
 }
 
 function splitBilingualQuestionLine(input: string) {

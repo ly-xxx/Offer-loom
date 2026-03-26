@@ -290,6 +290,7 @@ export class AnswerJobManager {
       }
       const parsed = JSON.parse(raw) as { citations?: unknown[]; full_answer_markdown?: string }
       const generatedId = `generated_${options.questionId}`
+      const updatedAt = new Date().toISOString()
 
       job.stage = 'persisting'
       job.summary = '写入数据库与答案缓存'
@@ -302,7 +303,18 @@ export class AnswerJobManager {
         outputJson: JSON.stringify(parsed),
         outputMarkdown: parsed.full_answer_markdown ?? '',
         citationsJson: JSON.stringify(parsed.citations ?? []),
-        updatedAt: new Date().toISOString()
+        updatedAt
+      })
+      this.db.appendGeneratedAnswerRun({
+        id: `${generatedId}:${updatedAt}`,
+        questionId: options.questionId,
+        model: options.model,
+        reasoningEffort: options.reasoningEffort,
+        status: 'ready',
+        outputJson: JSON.stringify(parsed),
+        outputMarkdown: parsed.full_answer_markdown ?? '',
+        citationsJson: JSON.stringify(parsed.citations ?? []),
+        updatedAt
       })
 
       await fs.writeFile(

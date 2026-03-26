@@ -933,6 +933,21 @@ function initSchema(db) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE generated_answer_runs (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      reasoning_effort TEXT NOT NULL,
+      status TEXT NOT NULL,
+      output_json TEXT NOT NULL,
+      output_markdown TEXT NOT NULL,
+      citations_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX generated_answer_runs_question_idx
+    ON generated_answer_runs (question_id, updated_at DESC);
+
     CREATE TABLE work_chunks (
       id TEXT PRIMARY KEY,
       document_id TEXT NOT NULL,
@@ -1829,8 +1844,8 @@ const TOPIC_FAMILIES = [
     candidateKeywords: ['rag', 'retrieval augmented', 'retrieval-augmented', 'retriever', 'reranker', 'rerank', 'vector database', 'vector store', 'grounding', 'hallucination', '检索增强', '召回', '重排', '向量数据库', '幻觉']
   },
   {
-    questionKeywords: ['agent', 'agents', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planning', 'planner', 'executor', 'evaluator', '智能体', '多智能体', '工具调用'],
-    candidateKeywords: ['multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planning', 'planner', 'executor', 'evaluator', '智能体', '多智能体', '工具调用']
+    questionKeywords: ['agent', 'agents', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planning', 'planner', 'executor', 'evaluator', 'memory', 'working memory', 'episodic memory', 'semantic memory', 'long-term memory', 'short-term memory', 'scratchpad', 'state store', '智能体', '多智能体', '工具调用', '记忆', '短期记忆', '长期记忆', '工作记忆', '状态管理'],
+    candidateKeywords: ['multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planning', 'planner', 'executor', 'evaluator', 'memory', 'working memory', 'episodic memory', 'semantic memory', 'long-term memory', 'short-term memory', 'scratchpad', 'state store', '智能体', '多智能体', '工具调用', '记忆', '短期记忆', '长期记忆', '工作记忆', '状态管理']
   },
   {
     questionKeywords: ['prompt engineering', 'prompt design', 'prompt tuning', 'system prompt', 'instruction', 'context', 'few-shot', 'few shot', 'zero-shot', 'zero shot', 'chain-of-thought', 'cot', '提示词', '提示工程', '系统提示', '上下文', '指令'],
@@ -1895,8 +1910,8 @@ const DOMAIN_FAMILIES = [
   {
     name: 'llm_agent',
     group: 'llm',
-    questionKeywords: ['agent', 'agents', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planner', 'executor', 'evaluator', 'langchain', 'langgraph', '智能体', '多智能体', '工具调用'],
-    candidateKeywords: ['agent system', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planner', 'executor', 'evaluator', 'langchain', 'langgraph', '智能体', '多智能体', '工具调用']
+    questionKeywords: ['agent', 'agents', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planner', 'executor', 'evaluator', 'langchain', 'langgraph', 'memory', 'working memory', 'episodic memory', 'semantic memory', 'long-term memory', 'short-term memory', 'scratchpad', 'state store', 'memory module', '智能体', '多智能体', '工具调用', '记忆', '短期记忆', '长期记忆', '工作记忆', '状态管理'],
+    candidateKeywords: ['agent system', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planner', 'executor', 'evaluator', 'langchain', 'langgraph', 'memory', 'working memory', 'episodic memory', 'semantic memory', 'long-term memory', 'short-term memory', 'scratchpad', 'state store', 'memory module', '智能体', '多智能体', '工具调用', '记忆', '短期记忆', '长期记忆', '工作记忆', '状态管理']
   },
   {
     name: 'llm_prompt',
@@ -1944,7 +1959,7 @@ const STRICT_DIRECT_FAMILY_RULES = {
     minCandidateHits: 1
   },
   llm_agent: {
-    candidateKeywords: ['agent', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planner', 'executor', 'evaluator', 'langchain', 'langgraph', '智能体', '多智能体', '工具调用'],
+    candidateKeywords: ['agent', 'multi-agent', 'tool use', 'tool calling', 'function calling', 'mcp', 'planner', 'executor', 'evaluator', 'langchain', 'langgraph', 'memory', 'working memory', 'episodic memory', 'semantic memory', 'long-term memory', 'short-term memory', 'scratchpad', 'state store', 'memory module', '智能体', '多智能体', '工具调用', '记忆', '短期记忆', '长期记忆', '工作记忆', '状态管理'],
     minCandidateHits: 1
   },
   llm_prompt: {
@@ -2254,6 +2269,16 @@ function isPromptQuestion(questionText) {
   return /(prompt|prompt engineering|prompt design|prompt tuning|system prompt|instruction|context|few-shot|few shot|zero-shot|zero shot|chain-of-thought|cot|提示词|提示工程|系统提示|上下文|指令)/i.test(questionText)
 }
 
+function isAgentMemoryQuestion(questionText) {
+  return /(agent|multi-agent|智能体|多智能体|mcp|planner|executor|tool use|tool calling|function calling)/i.test(questionText)
+    && /(memory|working memory|episodic memory|semantic memory|long-term memory|short-term memory|scratchpad|state store|memory module|记忆|短期记忆|长期记忆|工作记忆|状态管理)/i.test(questionText)
+}
+
+function hasAgentMemoryCandidateSignal(text) {
+  return /(agent|multi-agent|智能体|多智能体|mcp|planner|executor|tool use|tool calling|function calling|workflow)/i.test(text)
+    && /(memory|working memory|episodic memory|semantic memory|long-term memory|short-term memory|scratchpad|state store|memory module|context management|session state|记忆|短期记忆|长期记忆|工作记忆|状态管理|会话状态)/i.test(text)
+}
+
 function isLlmServingQuestion(questionText) {
   return (
     /(llm inference|model serving|large language model|language model|llm|transformer|decoder-only|大模型推理|模型服务|大模型)/i.test(questionText)
@@ -2337,9 +2362,11 @@ function scoreWorkGrounding(questionText, document, domainScore = 0) {
   const isFoundationalQuestion = /(what is|what are|explain|difference between|why|如何|什么是|区别|原理|概念)/i.test(normalizedQuestion)
   const isProjectQuestion = isProjectNarrativeQuestion(questionText)
   const promptQuestion = isPromptQuestion(normalizedQuestion)
+  const agentMemoryQuestion = isAgentMemoryQuestion(normalizedQuestion)
   const servingQuestion = isLlmServingQuestion(normalizedQuestion)
   const hasPromptConceptSignal = /(llm|large language model|prompt engineering|system prompt|in-context learning|instruction following|few-shot|chain-of-thought|提示词|提示工程|系统提示|上下文|大模型)/i.test(normalizedContext)
   const hasPromptApplicationSignal = /(prompt|instruction|json format|prompt template|provide one or more points|generated|run <|run_|自然语言指令|示例命令|command)/i.test(normalizedContext)
+  const hasAgentMemorySignal = hasAgentMemoryCandidateSignal(normalizedContext)
   const hasServingSignal = hasLlmServingCandidateSignal(normalizedContext)
   let score = 0
 
@@ -2374,6 +2401,11 @@ function scoreWorkGrounding(questionText, document, domainScore = 0) {
     score += 0.14
   } else if (promptQuestion && hasPromptApplicationSignal) {
     score += 0.02
+  }
+  if (agentMemoryQuestion && hasAgentMemorySignal) {
+    score += 0.24
+  } else if (agentMemoryQuestion) {
+    score -= 0.06
   }
   if (servingQuestion && hasServingSignal) {
     score += 0.22
@@ -2442,9 +2474,11 @@ function scoreWorkChunkGrounding(questionText, chunk, domainScore = 0) {
   const normalizedContext = buildWorkChunkScoringText(chunk).toLowerCase()
   const isFoundationalQuestion = /(what is|what are|explain|difference between|why|如何|什么是|区别|原理|概念)/i.test(normalizedQuestion)
   const promptQuestion = isPromptQuestion(normalizedQuestion)
+  const agentMemoryQuestion = isAgentMemoryQuestion(normalizedQuestion)
   const servingQuestion = isLlmServingQuestion(normalizedQuestion)
   const hasPromptConceptSignal = /(llm|large language model|prompt engineering|system prompt|in-context learning|instruction following|few-shot|chain-of-thought|提示词|提示工程|系统提示|上下文|大模型)/i.test(normalizedContext)
   const hasPromptApplicationSignal = /(prompt|instruction|json format|prompt template|provide one or more points|generated|run <|run_|自然语言指令|示例命令|command)/i.test(normalizedContext)
+  const hasAgentMemorySignal = hasAgentMemoryCandidateSignal(normalizedContext)
   const hasServingSignal = hasLlmServingCandidateSignal(normalizedContext)
   let score = 0.08
 
@@ -2471,6 +2505,11 @@ function scoreWorkChunkGrounding(questionText, chunk, domainScore = 0) {
     score += 0.14
   } else if (promptQuestion && hasPromptApplicationSignal) {
     score += 0.02
+  }
+  if (agentMemoryQuestion && hasAgentMemorySignal) {
+    score += 0.2
+  } else if (agentMemoryQuestion) {
+    score -= 0.04
   }
   if (servingQuestion && hasServingSignal) {
     score += 0.18

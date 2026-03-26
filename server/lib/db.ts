@@ -27,8 +27,10 @@ export type DocumentListItem = {
 type SectionQuestionRow = {
   anchor: string
   difficulty: string
+  generatedCount: number
   generatedOutputJson: string | null
   generatedStatus: string | null
+  lastGeneratedAt: string | null
   metadataJson: string
   orderIndex: number
   questionId: string
@@ -44,6 +46,7 @@ export type QuestionListItem = {
   company: string | null
   displayText: string
   difficulty: string
+  generatedCount: number
   guideFallbackCount: number
   generatedStatus: string | null
   guideLinkCount: number
@@ -51,6 +54,7 @@ export type QuestionListItem = {
   interviewDate: string | null
   interviewFacet: string
   importOrigin: string | null
+  lastGeneratedAt: string | null
   questionType: string
   role: string | null
   sourceId: string
@@ -63,8 +67,10 @@ export type QuestionListItem = {
 
 type LooseQuestionRow = {
   difficulty: string
+  generatedCount: number
   generatedOutputJson: string | null
   generatedStatus: string | null
+  lastGeneratedAt: string | null
   metadataJson: string
   questionId: string
   questionType: string
@@ -88,6 +94,7 @@ export class OfferLoomDb {
   constructor(databasePath = DB_PATH) {
     this.databasePath = databasePath
     this.db = new Database(databasePath, { readonly: false })
+    this.ensureRuntimeSchema()
   }
 
   close() {
@@ -98,10 +105,48 @@ export class OfferLoomDb {
     this.close()
     this.databasePath = databasePath
     this.db = new Database(databasePath, { readonly: false })
+    this.ensureRuntimeSchema()
   }
 
   getPath() {
     return this.databasePath
+  }
+
+  private ensureRuntimeSchema() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS generated_answer_runs (
+        id TEXT PRIMARY KEY,
+        question_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        reasoning_effort TEXT NOT NULL,
+        status TEXT NOT NULL,
+        output_json TEXT NOT NULL,
+        output_markdown TEXT NOT NULL,
+        citations_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS generated_answer_runs_question_idx
+      ON generated_answer_runs (question_id, updated_at DESC);
+    `)
+
+    this.db.exec(`
+      INSERT OR IGNORE INTO generated_answer_runs (
+        id, question_id, model, reasoning_effort, status, output_json, output_markdown, citations_json, updated_at
+      )
+      SELECT
+        id || ':seed',
+        question_id,
+        model,
+        reasoning_effort,
+        status,
+        output_json,
+        output_markdown,
+        citations_json,
+        updated_at
+      FROM generated_answers
+      WHERE status = 'ready'
+    `)
   }
 
   getMeta() {
@@ -154,11 +199,22 @@ export class OfferLoomDb {
         COALESCE(SUM(CASE WHEN l.relation = 'question_to_section' THEN 1 ELSE 0 END), 0) AS guideLinkCount,
         COALESCE(SUM(CASE WHEN l.relation = 'question_to_document_fallback' THEN 1 ELSE 0 END), 0) AS guideFallbackCount,
         COALESCE(SUM(CASE WHEN l.relation = 'question_to_work' THEN 1 ELSE 0 END), 0) AS workLinkCount,
-        ga.status AS generatedStatus
+        ga.status AS generatedStatus,
+        COALESCE(gh.generatedCount, 0) AS generatedCount,
+        gh.lastGeneratedAt AS lastGeneratedAt
       FROM questions q
       JOIN documents d ON d.id = q.document_id
       LEFT JOIN links l ON l.from_id = q.id
       LEFT JOIN generated_answers ga ON ga.question_id = q.id
+      LEFT JOIN (
+        SELECT
+          question_id AS questionId,
+          COUNT(*) AS generatedCount,
+          MAX(updated_at) AS lastGeneratedAt
+        FROM generated_answer_runs
+        WHERE status = 'ready'
+        GROUP BY question_id
+      ) gh ON gh.questionId = q.id
       ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''}
       GROUP BY q.id
       ORDER BY guideLinkCount DESC, guideFallbackCount DESC, workLinkCount DESC, q.text ASC
@@ -324,6 +380,7 @@ export class OfferLoomDb {
     }>
 
     const generated = this.getGeneratedAnswer(questionId)
+    const generatedHistory = this.getGeneratedAnswerHistory(questionId)
 
     const { metadataJson, sourceRelPath, ...questionBase } = question
     const metadata = safeJson(metadataJson) as Record<string, unknown>
@@ -335,6 +392,9 @@ export class OfferLoomDb {
       sourcePath: buildSourceReference(question.sourceId, sourceRelPath),
       metadata,
       translatedText,
+      generatedCount: generatedHistory.length,
+      generationHistory: generatedHistory,
+      lastGeneratedAt: generatedHistory[0]?.updatedAt ?? generated?.updatedAt ?? null,
       guideMatches: (guideMatches as Array<{
         anchor: string
         content: string
@@ -464,7 +524,9 @@ export class OfferLoomDb {
         q.difficulty,
         l.score,
         ga.status AS generatedStatus,
-        ga.output_json AS generatedOutputJson
+        ga.output_json AS generatedOutputJson,
+        COALESCE(gh.generatedCount, 0) AS generatedCount,
+        gh.lastGeneratedAt AS lastGeneratedAt
       FROM sections s
       JOIN links l
         ON l.to_id = s.id
@@ -473,6 +535,15 @@ export class OfferLoomDb {
         ON q.id = l.from_id
       LEFT JOIN generated_answers ga
         ON ga.question_id = q.id
+      LEFT JOIN (
+        SELECT
+          question_id AS questionId,
+          COUNT(*) AS generatedCount,
+          MAX(updated_at) AS lastGeneratedAt
+        FROM generated_answer_runs
+        WHERE status = 'ready'
+        GROUP BY question_id
+      ) gh ON gh.questionId = q.id
       WHERE s.document_id = ?
       ORDER BY s.order_index ASC, l.score DESC, q.text ASC
     `).all(documentId) as SectionQuestionRow[]
@@ -486,12 +557,23 @@ export class OfferLoomDb {
         q.difficulty,
         l.score,
         ga.status AS generatedStatus,
-        ga.output_json AS generatedOutputJson
+        ga.output_json AS generatedOutputJson,
+        COALESCE(gh.generatedCount, 0) AS generatedCount,
+        gh.lastGeneratedAt AS lastGeneratedAt
       FROM links l
       JOIN questions q
         ON q.id = l.from_id
       LEFT JOIN generated_answers ga
         ON ga.question_id = q.id
+      LEFT JOIN (
+        SELECT
+          question_id AS questionId,
+          COUNT(*) AS generatedCount,
+          MAX(updated_at) AS lastGeneratedAt
+        FROM generated_answer_runs
+        WHERE status = 'ready'
+        GROUP BY question_id
+      ) gh ON gh.questionId = q.id
       WHERE l.to_id = ? AND l.relation = 'question_to_document_fallback'
       ORDER BY l.score DESC, q.text ASC
     `).all(documentId) as LooseQuestionRow[]
@@ -504,9 +586,11 @@ export class OfferLoomDb {
       difficulty: string
       displayText: string
       generated: JsonRecord | null
+      generatedCount: number
       generatedStatus: string | null
       id: string
       isRevisited: boolean
+      lastGeneratedAt: string | null
       questionType: string
       score: number
       text: string
@@ -529,7 +613,9 @@ export class OfferLoomDb {
         questionType: item.questionType,
         difficulty: item.difficulty,
         score: item.score,
+        generatedCount: item.generatedCount,
         generatedStatus: item.generatedStatus,
+        lastGeneratedAt: item.lastGeneratedAt,
         generated: item.generatedOutputJson ? safeObject(item.generatedOutputJson) : null
       }
       questionsByAnchor.set(item.anchor, upsertQuestionBucket(bucket, candidate))
@@ -543,9 +629,11 @@ export class OfferLoomDb {
       difficulty: string
       displayText: string
       generated: JsonRecord | null
+      generatedCount: number
       generatedStatus: string | null
       id: string
       isRevisited: boolean
+      lastGeneratedAt: string | null
       questionType: string
       score: number
       text: string
@@ -565,7 +653,9 @@ export class OfferLoomDb {
         questionType: item.questionType,
         difficulty: item.difficulty,
         score: item.score,
+        generatedCount: item.generatedCount,
         generatedStatus: item.generatedStatus,
+        lastGeneratedAt: item.lastGeneratedAt,
         generated: item.generatedOutputJson ? safeObject(item.generatedOutputJson) : null
       })
     }, [])
@@ -665,6 +755,29 @@ export class OfferLoomDb {
     }
   }
 
+  getGeneratedAnswerHistory(questionId: string) {
+    const rows = this.db.prepare(`
+      SELECT
+        id,
+        model,
+        reasoning_effort AS reasoningEffort,
+        status,
+        updated_at AS updatedAt
+      FROM generated_answer_runs
+      WHERE question_id = ?
+        AND status = 'ready'
+      ORDER BY updated_at DESC
+    `).all(questionId) as Array<{
+      id: string
+      model: string
+      reasoningEffort: string
+      status: string
+      updatedAt: string
+    }>
+
+    return rows
+  }
+
   upsertGeneratedAnswer(input: {
     citationsJson: string
     id: string
@@ -690,6 +803,28 @@ export class OfferLoomDb {
         output_markdown = excluded.output_markdown,
         citations_json = excluded.citations_json,
         updated_at = excluded.updated_at
+    `)
+
+    statement.run(input)
+  }
+
+  appendGeneratedAnswerRun(input: {
+    citationsJson: string
+    id: string
+    model: string
+    outputJson: string
+    outputMarkdown: string
+    questionId: string
+    reasoningEffort: string
+    status: string
+    updatedAt: string
+  }) {
+    const statement = this.db.prepare(`
+      INSERT INTO generated_answer_runs (
+        id, question_id, model, reasoning_effort, status, output_json, output_markdown, citations_json, updated_at
+      ) VALUES (
+        @id, @questionId, @model, @reasoningEffort, @status, @outputJson, @outputMarkdown, @citationsJson, @updatedAt
+      )
     `)
 
     statement.run(input)
@@ -964,9 +1099,11 @@ function upsertQuestionBucket(
     difficulty: string
     displayText: string
     generated: JsonRecord | null
+    generatedCount: number
     generatedStatus: string | null
     id: string
     isRevisited: boolean
+    lastGeneratedAt: string | null
     questionType: string
     score: number
     text: string
@@ -976,9 +1113,11 @@ function upsertQuestionBucket(
     difficulty: string
     displayText: string
     generated: JsonRecord | null
+    generatedCount: number
     generatedStatus: string | null
     id: string
     isRevisited: boolean
+    lastGeneratedAt: string | null
     questionType: string
     score: number
     text: string
@@ -1126,6 +1265,7 @@ function compareQuestionListItems(left: QuestionListItem, right: QuestionListIte
   const leftReady = left.generatedStatus === 'ready' ? 1 : 0
   const rightReady = right.generatedStatus === 'ready' ? 1 : 0
   return rightReady - leftReady
+    || right.generatedCount - left.generatedCount
     || right.guideLinkCount - left.guideLinkCount
     || right.guideFallbackCount - left.guideFallbackCount
     || right.workLinkCount - left.workLinkCount

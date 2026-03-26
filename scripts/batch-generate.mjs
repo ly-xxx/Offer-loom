@@ -21,6 +21,22 @@ const args = parseArgs(process.argv.slice(2))
 
 async function main() {
   const db = new Database(DB_PATH)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS generated_answer_runs (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      reasoning_effort TEXT NOT NULL,
+      status TEXT NOT NULL,
+      output_json TEXT NOT NULL,
+      output_markdown TEXT NOT NULL,
+      citations_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS generated_answer_runs_question_idx
+    ON generated_answer_runs (question_id, updated_at DESC);
+  `)
   const limit = args.limit === 'all' ? Number.MAX_SAFE_INTEGER : Number(args.limit ?? 10)
   const concurrency = Math.max(1, Number(args.concurrency ?? 1))
   const model = args.model ?? 'gpt-5'
@@ -54,6 +70,13 @@ async function main() {
       output_markdown = excluded.output_markdown,
       citations_json = excluded.citations_json,
       updated_at = excluded.updated_at
+  `)
+  const insertRun = db.prepare(`
+    INSERT INTO generated_answer_runs (
+      id, question_id, model, reasoning_effort, status, output_json, output_markdown, citations_json, updated_at
+    ) VALUES (
+      @id, @questionId, @model, @reasoningEffort, @status, @outputJson, @outputMarkdown, @citationsJson, @updatedAt
+    )
   `)
 
   const queue = [...questions]
@@ -94,6 +117,7 @@ async function main() {
         const lastMessage = await runCodex(prompt, outputFile, model, reasoningEffort)
         const parsed = JSON.parse(lastMessage)
         const answerId = hashContent(`generated:${question.id}`)
+        const updatedAt = nowIso()
         await fs.writeFile(
           path.join(GENERATED_DIR, `${question.id}.json`),
           JSON.stringify(parsed, null, 2),
@@ -108,11 +132,23 @@ async function main() {
           outputJson: JSON.stringify(parsed),
           outputMarkdown: parsed.full_answer_markdown ?? '',
           citationsJson: JSON.stringify(parsed.citations ?? []),
-          updatedAt: nowIso()
+          updatedAt
+        })
+        insertRun.run({
+          id: hashContent(`generated-run:${question.id}:${updatedAt}:${model}:${reasoningEffort}`),
+          questionId: question.id,
+          model,
+          reasoningEffort,
+          status: 'ready',
+          outputJson: JSON.stringify(parsed),
+          outputMarkdown: parsed.full_answer_markdown ?? '',
+          citationsJson: JSON.stringify(parsed.citations ?? []),
+          updatedAt
         })
         state.succeeded += 1
       } catch (error) {
         const answerId = hashContent(`generated:${question.id}`)
+        const updatedAt = nowIso()
         upsert.run({
           id: answerId,
           questionId: question.id,
@@ -124,7 +160,7 @@ async function main() {
           }),
           outputMarkdown: '',
           citationsJson: '[]',
-          updatedAt: nowIso()
+          updatedAt
         })
         state.failed += 1
         console.error(`[worker ${workerId}] ${localizedQuestion}`)

@@ -83,6 +83,7 @@ export type QuestionListItem = {
   company: string | null
   displayText: string
   difficulty: string
+  generatedCount: number
   guideFallbackCount: number
   generatedStatus: string | null
   guideLinkCount: number
@@ -90,6 +91,7 @@ export type QuestionListItem = {
   interviewDate: string | null
   interviewFacet: string
   importOrigin: string | null
+  lastGeneratedAt: string | null
   questionType: string
   role: string | null
   sourceId: string
@@ -164,10 +166,20 @@ export type GeneratedAnswer = {
   updatedAt: string
 }
 
+export type GeneratedAnswerHistoryEntry = {
+  id: string
+  model: string
+  reasoningEffort: string
+  status: string
+  updatedAt: string
+}
+
 export type QuestionDetail = {
   displayText: string
   difficulty: string
   generated: GeneratedAnswer | null
+  generatedCount: number
+  generationHistory: GeneratedAnswerHistoryEntry[]
   guideFallbackMatches: Array<{
     documentId: string
     documentTitle: string
@@ -177,6 +189,7 @@ export type QuestionDetail = {
   }>
   guideMatches: GuideMatch[]
   id: string
+  lastGeneratedAt: string | null
   metadata: Record<string, unknown>
   questionType: string
   sourceId: string
@@ -224,9 +237,11 @@ export type DocumentSection = {
       work_evidence_status?: 'adjacent' | 'direct' | 'none'
       work_story?: string
     } | null
+    generatedCount: number
     generatedStatus: string | null
     id: string
     isRevisited: boolean
+    lastGeneratedAt: string | null
     questionType: string
     score: number
     text: string
@@ -316,7 +331,7 @@ export type JobStatus = {
   error?: string
   finishedAt?: string
   id: string
-  kind?: 'answer'
+  kind: 'answer'
   model: string
   promptPreview?: string
   questionId: string
