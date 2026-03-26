@@ -166,11 +166,11 @@ npm run setup:serve
 
 ### 面试官压力模式会继续深挖，逼你把答案讲到真正能扛追问的程度
 
-| 第一轮追问 | 追问后的拆解与继续加压 |
+| 第一轮：你答不上来时，先逼你把思路说出来 | 第二轮：你回答之后，继续往下追问 |
 | --- | --- |
-| ![面试官压力模式第一轮追问](./README_asset/876b3f94973160d69c746c5e1b92d6b3.png) | ![面试官压力模式中的进一步拆解与反馈](./README_asset/2944eaeb537423af27f22fba3e300831.png) |
+| ![面试官压力模式第一轮追问](./README_asset/2944eaeb537423af27f22fba3e300831.png) | ![面试官压力模式第二轮回答后的继续追问](./README_asset/876b3f94973160d69c746c5e1b92d6b3.png) |
 
-如果你以为“生成答案”就结束了，这个模式会很快把你拉回真实面试现场。
+如果你以为“生成答案”就结束了，这个模式会很快把你拉回真实面试现场。第一轮会在你说“我不知道”时逼你把最基本的判断路径讲出来；第二轮则会在你已经回答之后继续卡细节、卡边界和卡优先级。
 
 ### 主题和配置也不是附属功能，你可以把工作台调成自己更愿意长期使用的样子
 
@@ -306,3 +306,13 @@ README 负责快速上手；更完整的实现细节在下面这些文档里：
 
 - [docs/RELEASE.md](./docs/RELEASE.md)
 - [docs/PRIVACY.md](./docs/PRIVACY.md)
+
+## Star History
+
+<a href="https://www.star-history.com/#ly-xxx/Offer-loom&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date" />
+  </picture>
+</a>

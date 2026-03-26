@@ -148,11 +148,11 @@ The system does not stop at a “final answer”. It keeps the evidence trail, p
 
 ### Interviewer pressure mode keeps drilling until your answer can survive real follow-ups
 
-| First round of pressure | Deeper breakdown and another wave of pressure |
+| Round one: when you say you do not know, it still forces you to expose your reasoning path | Round two: after you answer, it keeps drilling deeper |
 | --- | --- |
-| ![Interviewer pressure mode first follow-ups](./README_asset/876b3f94973160d69c746c5e1b92d6b3.png) | ![Interviewer pressure mode deeper critique](./README_asset/2944eaeb537423af27f22fba3e300831.png) |
+| ![Interviewer pressure mode first round after candidate says they do not know](./README_asset/2944eaeb537423af27f22fba3e300831.png) | ![Interviewer pressure mode second round after the candidate answers](./README_asset/876b3f94973160d69c746c5e1b92d6b3.png) |
 
-If you thought answer generation was the finish line, this mode quickly turns it into an actual mock interview.
+If you thought answer generation was the finish line, this mode quickly turns it into an actual mock interview. The first round does not let “I do not know” end the exchange; the second round keeps testing your detail level, boundaries, and prioritization even after you respond.
 
 ### Themes and configuration are part of the product, not an afterthought
 
@@ -286,3 +286,13 @@ Before publishing or sharing the repo, read:
 
 - [docs/RELEASE.en.md](./docs/RELEASE.en.md)
 - [docs/PRIVACY.en.md](./docs/PRIVACY.en.md)
+
+## Star History
+
+<a href="https://www.star-history.com/#ly-xxx/Offer-loom&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date" />
+  </picture>
+</a>
