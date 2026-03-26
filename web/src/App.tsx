@@ -160,6 +160,8 @@ const INTERVIEW_SCROLL_STORAGE_KEY = 'offerloom.interview-scroll.v1'
 const VIEW_STATE_STORAGE_KEY = 'offerloom.view-state.v1'
 const GUIDE_FALLBACK_SECTION_ANCHOR = 'chapter-question-bank'
 const DOCUMENT_SCROLL_VIEWPORT_OFFSET = 104
+const CODEX_DOCK_RESERVE_WIDTH = 492
+const MIN_DOC_STAGE_WIDTH_WITH_CODEX_DOCK = 980
 const DEFAULT_UI_STATE: WorkspaceUiState = {
   currentDocumentId: null,
   currentInterviewQuestionId: null,
@@ -320,6 +322,7 @@ function App() {
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null)
   const [workspaceUi, setWorkspaceUi] = useState<WorkspaceUiState>(() => readWorkspaceUiState())
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [isCodexDefaultDocked, setIsCodexDefaultDocked] = useState(true)
   const [expandedGuideKeys, setExpandedGuideKeys] = useState<string[]>([])
   const [expandedInterviewCategoryIds, setExpandedInterviewCategoryIds] = useState<string[]>([])
   const lastIndexJobStatusRef = useRef<string | null>(null)
@@ -430,10 +433,21 @@ function App() {
   ), [isMobile, viewportWidth, workspaceUi.sidebarWidth])
 
   const effectiveSidebarOpen = isMobile ? mobileSidebarOpen : workspaceUi.sidebarOpen
+  const liveSidebarWidth = !isMobile && effectiveSidebarOpen ? sidebarWidth : 0
+  const shouldReserveCodexDockRail = !isMobile
+    && effectiveSidebarOpen
+    && isCodexDefaultDocked
+    && viewportWidth - liveSidebarWidth >= CODEX_DOCK_RESERVE_WIDTH + MIN_DOC_STAGE_WIDTH_WITH_CODEX_DOCK
 
   const appStyle = useMemo(() => (
     buildWorkspaceCssVars(workspaceUi)
   ), [workspaceUi])
+
+  const studyLayoutStyle = useMemo(() => ({
+    ['--sidebar-width' as string]: `${sidebarWidth}px`,
+    ['--sidebar-live-width' as string]: `${liveSidebarWidth}px`,
+    ['--codex-dock-reserve' as string]: shouldReserveCodexDockRail ? `${CODEX_DOCK_RESERVE_WIDTH}px` : '0px'
+  }), [liveSidebarWidth, shouldReserveCodexDockRail, sidebarWidth])
 
   const sidebarToggleStyle = useMemo(() => {
     if (isMobile) {
@@ -2040,10 +2054,8 @@ function App() {
       </AnimatePresence>
 
       <div
-        className={`study-layout ${effectiveSidebarOpen ? '' : 'sidebar-collapsed'} ${isMobile ? 'is-mobile' : ''}`}
-        style={{
-          ['--sidebar-width' as string]: `${sidebarWidth}px`
-        }}
+        className={`study-layout ${effectiveSidebarOpen ? '' : 'sidebar-collapsed'} ${isMobile ? 'is-mobile' : ''} ${shouldReserveCodexDockRail ? 'has-codex-dock-rail' : ''}`}
+        style={studyLayoutStyle}
       >
         <button
           className={`sidebar-rail-toggle ${effectiveSidebarOpen ? 'open' : 'closed'}`}
@@ -2092,7 +2104,7 @@ function App() {
           </aside>
         ) : null}
 
-        <main className="doc-stage">
+        <main className={`doc-stage ${shouldReserveCodexDockRail ? 'codex-dock-reserved' : ''}`}>
           {workspaceUi.sidebarTab === 'interviews' ? (
             questionList.length > 0 ? (
               activeInterviewQuestion ? (
@@ -2210,6 +2222,7 @@ function App() {
         model={model}
         models={meta?.models ?? ['gpt-5.4', 'gpt-5.2', 'gpt-5']}
         onAutoReferenceCurrentDocChange={setAutoReferenceCurrentDoc}
+        onDockingStateChange={setIsCodexDefaultDocked}
         onModelChange={setModel}
         onReasoningEffortChange={setReasoningEffort}
         onSelectedProjectIdsChange={setSelectedProjectIds}

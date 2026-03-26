@@ -13,8 +13,10 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import {
+  LoaderCircle,
   AtSign,
   FolderSearch,
+  LocateFixed,
   Maximize2,
   Minimize2,
   RotateCcw,
@@ -72,6 +74,7 @@ type Props = {
   model: string
   models: string[]
   onAutoReferenceCurrentDocChange: (value: boolean) => void
+  onDockingStateChange?: (value: boolean) => void
   onModelChange: (value: string) => void
   onReasoningEffortChange: (value: ReasoningEffort) => void
   onSelectedProjectIdsChange: (value: string[]) => void
@@ -87,16 +90,15 @@ export function FloatingCodexWindow(props: Props) {
   const isMobile = useMediaQuery('(max-width: 980px)')
   const [isOpen, setIsOpen] = useState(true)
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isDefaultDocked, setIsDefaultDocked] = useState(true)
   const [isPickerOpen, setIsPickerOpen] = useState(false)
   const [referenceQuery, setReferenceQuery] = useState('')
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
   const [runningJobId, setRunningJobId] = useState<string | null>(null)
-  const [frame, setFrame] = useState<FloatFrame>(() => ({
-    height: 512,
-    width: 432,
-    x: typeof window === 'undefined' ? 20 : Math.max(16, window.innerWidth - 464),
-    y: typeof window === 'undefined' ? 88 : Math.max(72, window.innerHeight - 552)
+  const [frame, setFrame] = useState<FloatFrame>(() => buildDefaultFloatFrame({
+    isCollapsed: false,
+    isMobile: typeof window === 'undefined' ? false : window.matchMedia('(max-width: 980px)').matches
   }))
   const dragState = useRef<null | { offsetX: number; offsetY: number }>(null)
   const resizeState = useRef<null | {
@@ -108,6 +110,10 @@ export function FloatingCodexWindow(props: Props) {
   const currentJobRef = useRef<null | { jobId: string; messageId: string }>(null)
   const messageEndRef = useRef<HTMLDivElement | null>(null)
   const deferredReferenceQuery = useDeferredValue(referenceQuery.trim().toLowerCase())
+  const defaultFrame = useMemo(() => buildDefaultFloatFrame({
+    isCollapsed,
+    isMobile
+  }), [isCollapsed, isMobile])
 
   const selectedReferenceDocs = useMemo(() => {
     const byId = new Map(props.documents.map((item) => [item.id, item]))
@@ -173,26 +179,35 @@ export function FloatingCodexWindow(props: Props) {
 
   useEffect(() => {
     const handleResize = () => {
-      setFrame((current) => clampFrame(current, isCollapsed))
+      setFrame((current) => {
+        const next = isDefaultDocked
+          ? clampFrame(defaultFrame, isCollapsed)
+          : clampFrame(current, isCollapsed)
+        return framesEqual(current, next) ? current : next
+      })
     }
 
     window.addEventListener('resize', handleResize)
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [isCollapsed])
+  }, [defaultFrame, isCollapsed, isDefaultDocked])
 
   useEffect(() => {
-    if (!isMobile) {
+    if (!isOpen) {
       return
     }
-    setFrame((current) => clampFrame({
-      ...current,
-      width: Math.min(window.innerWidth - 24, 460),
-      x: 12,
-      y: Math.max(68, window.innerHeight - (isCollapsed ? 96 : Math.min(current.height, 620)) - 12)
-    }, isCollapsed))
-  }, [isCollapsed, isMobile])
+    setFrame((current) => {
+      const next = isDefaultDocked
+        ? clampFrame(defaultFrame, isCollapsed)
+        : clampFrame(current, isCollapsed)
+      return framesEqual(current, next) ? current : next
+    })
+  }, [defaultFrame, isCollapsed, isDefaultDocked, isOpen])
+
+  useEffect(() => {
+    props.onDockingStateChange?.(isOpen && isDefaultDocked)
+  }, [isDefaultDocked, isOpen, props])
 
   const toggleReference = (documentId: string) => {
     props.onSelectedReferenceIdsChange(
@@ -218,6 +233,7 @@ export function FloatingCodexWindow(props: Props) {
     if (!currentDrag) {
       return
     }
+    setIsDefaultDocked(false)
     setFrame((current) => clampFrame({
       ...current,
       x: event.clientX - currentDrag.offsetX,
@@ -233,6 +249,7 @@ export function FloatingCodexWindow(props: Props) {
   }
 
   const resizeStart = (direction: ResizeDirection) => (event: ReactPointerEvent<HTMLDivElement>) => {
+    setIsDefaultDocked(false)
     resizeState.current = {
       direction,
       frame,
@@ -402,6 +419,11 @@ export function FloatingCodexWindow(props: Props) {
     setInput('')
   }
 
+  const handleRestoreDefaultDock = () => {
+    setIsDefaultDocked(true)
+    setFrame(defaultFrame)
+  }
+
   const style: CSSProperties = {
     height: isCollapsed ? 74 : frame.height,
     left: frame.x,
@@ -435,15 +457,36 @@ export function FloatingCodexWindow(props: Props) {
         </div>
 
         <div className="codex-console-header-actions">
-          <span className={`console-status-pill ${runningJobId ? 'busy' : 'idle'}`}>
-            {runningJobId ? '处理中' : '空闲'}
+          <span
+            aria-label={runningJobId ? 'Codex 正在处理' : 'Codex 空闲'}
+            className={`console-status-orb ${runningJobId ? 'busy' : 'idle'}`}
+            title={runningJobId ? 'Codex 正在处理' : 'Codex 空闲'}
+          >
+            <LoaderCircle className={runningJobId ? 'spin' : ''} size={15} />
           </span>
-          <button className="console-header-button" onClick={() => setIsCollapsed((current) => !current)}>
-            {isCollapsed ? '展开' : '收起'}
+          <button
+            aria-label="恢复默认停靠位"
+            className="console-header-icon"
+            disabled={isDefaultDocked}
+            onClick={handleRestoreDefaultDock}
+            title="恢复默认停靠位"
+          >
+            <LocateFixed size={15} />
+          </button>
+          <button
+            aria-label={isCollapsed ? '展开浮窗' : '收起浮窗'}
+            className="console-header-icon"
+            onClick={() => setIsCollapsed((current) => !current)}
+            title={isCollapsed ? '展开浮窗' : '收起浮窗'}
+          >
             {isCollapsed ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
           </button>
-          <button className="console-header-button" onClick={() => setIsOpen(false)}>
-            关闭
+          <button
+            aria-label="关闭 Codex 浮窗"
+            className="console-header-icon"
+            onClick={() => setIsOpen(false)}
+            title="关闭 Codex 浮窗"
+          >
             <X size={16} />
           </button>
         </div>
@@ -793,6 +836,47 @@ function clampFrame(frame: FloatFrame, isCollapsed: boolean) {
   return { height, width, x, y }
 }
 
+function buildDefaultFloatFrame(props: {
+  isCollapsed: boolean
+  isMobile: boolean
+}): FloatFrame {
+  if (typeof window === 'undefined') {
+    return {
+      height: props.isCollapsed ? 72 : 720,
+      width: 432,
+      x: 20,
+      y: props.isMobile ? 84 : 184
+    }
+  }
+
+  if (props.isMobile) {
+    const width = Math.min(window.innerWidth - 24, 460)
+    const expandedHeight = clamp(window.innerHeight - 108, 440, 720)
+    const height = props.isCollapsed ? 72 : expandedHeight
+
+    return clampFrame({
+      height,
+      width,
+      x: 12,
+      y: props.isCollapsed
+        ? window.innerHeight - height - 12
+        : window.innerHeight - expandedHeight - 12
+    }, props.isCollapsed)
+  }
+
+  const width = 432
+  const top = 184
+  const expandedHeight = clamp(window.innerHeight - top - 18, 520, 1040)
+  const height = props.isCollapsed ? 72 : expandedHeight
+
+  return clampFrame({
+    height,
+    width,
+    x: window.innerWidth - width - 24,
+    y: top
+  }, props.isCollapsed)
+}
+
 function resizeFrameByDirection(frame: FloatFrame, direction: ResizeDirection, deltaX: number, deltaY: number): FloatFrame {
   let next = { ...frame }
 
@@ -816,6 +900,13 @@ function resizeFrameByDirection(frame: FloatFrame, direction: ResizeDirection, d
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
+}
+
+function framesEqual(left: FloatFrame, right: FloatFrame) {
+  return left.height === right.height
+    && left.width === right.width
+    && left.x === right.x
+    && left.y === right.y
 }
 
 function sleep(ms: number) {
