@@ -1,0 +1,11 @@
+{
+  "id": "demo-agent-job",
+  "kind": "answer",
+  "questionId": "demo-q-1",
+  "status": "ready",
+  "model": "gpt-5.4",
+  "reasoningEffort": "high",
+  "startedAt": "2026-03-27T10:00:00.000Z",
+  "updatedAt": "2026-03-27T10:00:00.000Z",
+  "summary": "Demo 任务"
+}

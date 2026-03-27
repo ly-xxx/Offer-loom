@@ -1,0 +1,13 @@
+[
+  {
+    "id": "proj-offerloom",
+    "name": "OfferLoom",
+    "rootPath": "mywork/offerloom",
+    "status": "indexed",
+    "summary": "用于演示项目证据映射与面试回答串联",
+    "meta": {
+      "language": "TypeScript",
+      "domain": "Interview Copilot"
+    }
+  }
+]

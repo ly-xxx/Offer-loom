@@ -1,0 +1,29 @@
+{
+  "id": "doc-work-offerloom",
+  "kind": "work",
+  "ext": "md",
+  "path": "mywork/offerloom/architecture-notes.md",
+  "relPath": "offerloom/architecture-notes.md",
+  "sourceId": "demo-mywork",
+  "title": "OfferLoom 架构笔记（Demo）",
+  "updatedAt": "2026-03-27T09:45:00.000Z",
+  "watchPath": null,
+  "meta": {
+    "project": "OfferLoom",
+    "stage": "demo"
+  },
+  "content": "# OfferLoom 架构笔记\n\n- 前端：React + Vite\n- 后端：Node + SQLite\n- 关键能力：文档-题目联动、项目证据回溯\n",
+  "sections": [
+    {
+      "anchor": "arch-overview",
+      "heading": "架构概览",
+      "level": 2,
+      "startLine": 3,
+      "endLine": 6,
+      "knowledgeHitCount": 1,
+      "content": "前后端解耦，任务层支持独立扩展。",
+      "relatedQuestions": []
+    }
+  ],
+  "looseRelatedQuestions": []
+}

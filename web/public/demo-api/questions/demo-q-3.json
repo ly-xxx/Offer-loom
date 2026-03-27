@@ -1,0 +1,82 @@
+{
+  "id": "demo-q-3",
+  "text": "为什么运行时配置比构建时写死更适合 Pages？",
+  "displayText": "为什么运行时配置比构建时写死更适合 Pages？",
+  "translatedText": "为什么运行时配置比构建时写死更适合 Pages？",
+  "difficulty": "easy",
+  "questionType": "frontend",
+  "sourceId": "demo-qbank-source",
+  "sourcePath": "question-bank/demo.md",
+  "sourceTitle": "Demo 面经题库",
+  "metadata": {
+    "primaryCategoryId": "frontend",
+    "primaryCategoryLabel": "前端工程",
+    "primaryCategoryOrder": 30
+  },
+  "generatedCount": 1,
+  "lastGeneratedAt": "2026-03-27T10:04:00.000Z",
+  "workEvidenceStatus": "direct",
+  "generationHistory": [
+    {
+      "id": "gen-demo-q-3",
+      "model": "gpt-5.4",
+      "reasoningEffort": "medium",
+      "status": "ready",
+      "updatedAt": "2026-03-27T10:04:00.000Z"
+    }
+  ],
+  "generated": {
+    "id": "gen-demo-q-3",
+    "questionId": "demo-q-3",
+    "model": "gpt-5.4",
+    "reasoningEffort": "medium",
+    "status": "ready",
+    "updatedAt": "2026-03-27T10:04:00.000Z",
+    "output": {
+      "elevator_pitch": "运行时配置适配静态托管环境。",
+      "full_answer_markdown": "不重新构建即可切环境，适合 GitHub Pages 这类静态部署。",
+      "work_story": "我们把 API/WS 地址解析改成 runtime-config，在上线后可直接改配置。",
+      "work_evidence_status": "direct",
+      "follow_ups": ["缓存失效如何处理？", "配置拉取失败怎么兜底？"],
+      "missing_basics": []
+    },
+    "citations": [
+      {
+        "kind": "work",
+        "label": "OfferLoom 架构笔记（Demo）",
+        "path": "offerloom/architecture-notes.md"
+      }
+    ],
+    "outputMarkdown": "不重新构建即可切环境，适合 GitHub Pages 这类静态部署。"
+  },
+  "guideMatches": [
+    {
+      "id": "gm-demo-3",
+      "documentId": "doc-guide-llm",
+      "documentTitle": "LLM 与 RAG 面试主线（Demo）",
+      "heading": "运行时配置",
+      "anchor": "runtime-config",
+      "content": "Pages 场景下推荐使用运行时配置，避免每次改环境都重新构建。",
+      "path": "sources/documents/demo/llm-guide.md",
+      "relPath": "demo/llm-guide.md",
+      "startLine": 13,
+      "endLine": 15,
+      "level": 2,
+      "score": 0.88
+    }
+  ],
+  "guideFallbackMatches": [],
+  "workMatches": [
+    {
+      "id": "wm-demo-3",
+      "title": "OfferLoom 架构笔记（Demo）",
+      "path": "mywork/offerloom/architecture-notes.md",
+      "relPath": "offerloom/architecture-notes.md",
+      "score": 0.8,
+      "meta": {
+        "project": "OfferLoom"
+      }
+    }
+  ],
+  "workHintMatches": []
+}

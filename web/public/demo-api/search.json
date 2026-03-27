@@ -1,0 +1,26 @@
+{
+  "questions": [
+    {
+      "id": "demo-q-1",
+      "text": "为什么选择 RAG 而不是直接微调？",
+      "displayText": "为什么选择 RAG 而不是直接微调？",
+      "translatedText": "为什么选择 RAG 而不是直接微调？"
+    },
+    {
+      "id": "demo-q-3",
+      "text": "为什么运行时配置比构建时写死更适合 Pages？",
+      "displayText": "为什么运行时配置比构建时写死更适合 Pages？",
+      "translatedText": "为什么运行时配置比构建时写死更适合 Pages？"
+    }
+  ],
+  "sections": [
+    {
+      "id": "s-demo-1",
+      "documentId": "doc-guide-llm",
+      "documentTitle": "LLM 与 RAG 面试主线（Demo）",
+      "heading": "为什么优先 RAG",
+      "content": "当知识变化频繁时，RAG 比微调更容易保持可追溯与低成本更新。",
+      "relPath": "demo/llm-guide.md"
+    }
+  ]
+}

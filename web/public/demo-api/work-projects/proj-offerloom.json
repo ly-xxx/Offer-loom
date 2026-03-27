@@ -1,0 +1,55 @@
+{
+  "id": "proj-offerloom",
+  "name": "OfferLoom",
+  "rootPath": "mywork/offerloom",
+  "status": "indexed",
+  "summary": "用于演示项目证据映射与面试回答串联",
+  "meta": {
+    "language": "TypeScript",
+    "domain": "Interview Copilot"
+  },
+  "prep": {
+    "openingPitch": "这是一个把主线文档、面经题库和个人项目材料串联起来的面试准备工作台。",
+    "interviewArc": [
+      "先讲问题背景与目标",
+      "再讲架构拆分与关键取舍",
+      "最后讲上线后的稳定性与可扩展性"
+    ],
+    "highlightFacts": [
+      {
+        "label": "核心亮点",
+        "value": "文档-题目-项目证据三方联动",
+        "sourceLabel": "architecture-notes.md"
+      }
+    ],
+    "deepDiveQuestions": [
+      {
+        "id": "dq-1",
+        "category": "architecture",
+        "question": "为什么任务系统要拆成多种 job？",
+        "intent": "考察可扩展性设计",
+        "answerAngle": "通过任务类型解耦提升吞吐与容错",
+        "sourceLabel": "architecture-notes.md"
+      }
+    ],
+    "relatedQuestions": [
+      {
+        "id": "demo-q-2",
+        "questionType": "architecture",
+        "text": "并发提升 10 倍时系统先优化哪里？",
+        "generatedStatus": "ready",
+        "maxScore": 0.9,
+        "whyRelevant": "直接对应系统扩展能力"
+      }
+    ],
+    "sourceDocuments": [
+      {
+        "id": "doc-work-offerloom",
+        "title": "OfferLoom 架构笔记（Demo）",
+        "relPath": "offerloom/architecture-notes.md",
+        "ext": "md",
+        "originKind": "work"
+      }
+    ]
+  }
+}

@@ -10,9 +10,15 @@ import '@xterm/xterm/css/xterm.css'
 import 'katex/dist/katex.min.css'
 import './index.css'
 import App from './App.tsx'
+import { loadRuntimeConfig } from './runtimeConfig.ts'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+async function bootstrap() {
+  await loadRuntimeConfig()
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  )
+}
+
+void bootstrap()

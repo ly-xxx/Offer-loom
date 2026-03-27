@@ -42,7 +42,6 @@ import {
   fetchDocuments,
   fetchAgentJob,
   fetchAgentJobs,
-  fetchJob,
   fetchMeta,
   fetchQuestions,
   fetchQuestionDetail,
@@ -53,8 +52,10 @@ import {
   rerunAgentJob,
   saveSourcesSettings,
   startAnswerGeneration,
-  startIndexJob
+  startIndexJob,
+  subscribeAgentJobsStream
 } from './api'
+import { isDemoMode, resolveWsUrl } from './runtimeConfig'
 import { normalizeMarkdownForRender } from './markdown'
 import type {
   AgentJob,
@@ -414,6 +415,7 @@ function App() {
   const deferredSearch = useDeferredValue(globalSearch)
   const isMobile = useMediaQuery('(max-width: 980px)')
   const viewportWidth = useViewportWidth()
+  const demoMode = isDemoMode()
 
   useEffect(() => {
     selectedDocumentIdRef.current = selectedDocumentId
@@ -1121,6 +1123,21 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (demoMode) {
+      return
+    }
+
+    const closeStream = subscribeAgentJobsStream((job) => {
+      hasHydratedAgentJobsRef.current = true
+      setAgentJobs((current) => mergeAgentJobIntoList(current, job))
+    })
+
+    return () => {
+      closeStream()
+    }
+  }, [demoMode])
+
+  useEffect(() => {
     const latestByQuestionId: QuestionJobMap = {}
 
     for (const job of agentJobs) {
@@ -1137,43 +1154,16 @@ function App() {
     setQuestionJobs((current) => {
       const currentKeys = Object.keys(current)
       const nextKeys = Object.keys(latestByQuestionId)
-      if (currentKeys.length === nextKeys.length && nextKeys.every((key) => current[key]?.id === latestByQuestionId[key]?.id && current[key]?.status === latestByQuestionId[key]?.status)) {
+      if (currentKeys.length === nextKeys.length && nextKeys.every((key) => (
+        current[key]?.id === latestByQuestionId[key]?.id
+        && current[key]?.status === latestByQuestionId[key]?.status
+        && current[key]?.updatedAt === latestByQuestionId[key]?.updatedAt
+      ))) {
         return current
       }
       return latestByQuestionId
     })
   }, [agentJobs])
-
-  useEffect(() => {
-    const shouldPoll = settingsOpen
-      || jobsOpen
-      || Boolean(activeIndexJobId)
-      || agentJobs.some((job) => job.status === 'queued' || job.status === 'running')
-
-    if (!shouldPoll) {
-      return
-    }
-
-    let cancelled = false
-    const tick = async () => {
-      try {
-        const jobs = await fetchAgentJobs()
-        if (!cancelled) {
-          setAgentJobs(jobs)
-        }
-      } catch {}
-    }
-
-    void tick()
-    const timer = window.setInterval(() => {
-      void tick()
-    }, 1500)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [activeIndexJobId, agentJobs, jobsOpen, settingsOpen])
 
   useEffect(() => {
     if (!hasHydratedAgentJobsRef.current) {
@@ -1231,6 +1221,19 @@ function App() {
       return
     }
 
+    const cachedJob = agentJobs.find((job) => job.id === selectedAgentJobId)
+    if (cachedJob) {
+      setSelectedAgentJob(cachedJob)
+      if (selectedAgentJob?.id !== cachedJob.id) {
+        if ('promptPreview' in cachedJob && typeof cachedJob.promptPreview === 'string') {
+          setAgentPromptDraft(cachedJob.promptPreview)
+        } else {
+          setAgentPromptDraft('')
+        }
+      }
+      return
+    }
+
     let cancelled = false
     void fetchAgentJob(selectedAgentJobId)
       .then((job) => {
@@ -1253,7 +1256,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [selectedAgentJobId])
+  }, [agentJobs, selectedAgentJob?.id, selectedAgentJobId])
 
   useEffect(() => {
     if (jobToasts.length === 0) {
@@ -1272,15 +1275,24 @@ function App() {
   }, [jobToasts])
 
   useEffect(() => {
-    if (!selectedAgentJobId || !agentJobs.some((job) => job.id === selectedAgentJobId)) {
+    if (!selectedAgentJobId) {
       return
     }
-    void fetchAgentJob(selectedAgentJobId)
-      .then((job) => {
-        setSelectedAgentJob(job)
-      })
-      .catch(() => {})
+
+    const nextSelected = agentJobs.find((job) => job.id === selectedAgentJobId) ?? null
+    setSelectedAgentJob(nextSelected)
   }, [agentJobs, selectedAgentJobId])
+
+  useEffect(() => {
+    if (!generatingQuestionId) {
+      return
+    }
+
+    const runningJob = questionJobs[generatingQuestionId]
+    if (runningJob && runningJob.status !== 'queued' && runningJob.status !== 'running') {
+      setGeneratingQuestionId(null)
+    }
+  }, [generatingQuestionId, questionJobs])
 
   useEffect(() => {
     if (!selectedInterviewQuestionId) {
@@ -1355,12 +1367,12 @@ function App() {
   }, [loadQuestionDetails, questionList, selectedInterviewQuestionId])
 
   useEffect(() => {
-    if (!activeDocument?.watchPath) {
+    if (demoMode || !activeDocument?.watchPath) {
       return
     }
 
     let refreshTimer: number | null = null
-    const socket = new WebSocket(`${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/watch`)
+    const socket = new WebSocket(resolveWsUrl('/ws/watch'))
     socket.addEventListener('open', () => {
       socket.send(JSON.stringify({
         type: 'watch',
@@ -1387,7 +1399,7 @@ function App() {
       }
       socket.close()
     }
-  }, [activeDocument?.watchPath, selectedDocumentId])
+  }, [activeDocument?.watchPath, demoMode, selectedDocumentId])
 
   useEffect(() => {
     if (!currentPaneId || currentPaneSections.length === 0) {
@@ -1893,6 +1905,11 @@ function App() {
   }
 
   const generateAnswerForQuestion = useEffectEvent(async (questionId: string) => {
+    if (demoMode) {
+      setStatusNote('当前为 Demo 模式：已禁用在线生成，避免任何 token 消耗。')
+      return
+    }
+
     setGeneratingQuestionId(questionId)
     setStatusNote('Codex 正在围绕当前知识点生成个性化答案')
 
@@ -1918,37 +1935,21 @@ function App() {
         ...current,
         [questionId]: startedJob
       }))
-      setAgentJobs((current) => [startedJob, ...current.filter((item) => item.id !== startedJob.id)])
+      setAgentJobs((current) => mergeAgentJobIntoList(current, startedJob))
       rememberAnswerJobContext(startedJob.id, questionId, launchContext)
-
-      let latestJob = startedJob
-      while (latestJob.status === 'queued' || latestJob.status === 'running') {
-        await sleep(1500)
-        latestJob = await fetchJob(startedJob.id)
-        setQuestionJobs((current) => ({
-          ...current,
-          [questionId]: latestJob
-        }))
-        setAgentJobs((current) => current.map((item) => item.id === latestJob.id ? latestJob : item))
-      }
-
-      if (latestJob.status === 'ready') {
-        await syncQuestionArtifacts(questionId)
-      }
-
-      setStatusNote(
-        latestJob.status === 'ready'
-          ? '个性化答案已就位，可以继续顺着这一章往下学'
-          : latestJob.error ?? '答案生成失败'
-      )
+      setStatusNote('个性化答案任务已启动，下面会实时更新阶段和结果')
     } catch (error) {
       setStatusNote(error instanceof Error ? error.message : String(error))
-    } finally {
       setGeneratingQuestionId(null)
     }
   })
 
   const openInterviewerMode = useEffectEvent((questionId: string, seedFollowUp: string, questionTitle?: string | null) => {
+    if (demoMode) {
+      setStatusNote('当前为 Demo 模式：压力面试调用已禁用。')
+      return
+    }
+
     const cached = questionCache[questionId]
     setInterviewerSession({
       questionId,
@@ -1959,6 +1960,11 @@ function App() {
   })
 
   const saveCurrentSourcesConfig = useEffectEvent(async () => {
+    if (demoMode) {
+      setStatusNote('当前为 Demo 模式：已禁用来源配置写入。')
+      return
+    }
+
     if (!draftSourcesConfig) {
       return
     }
@@ -1978,6 +1984,11 @@ function App() {
   })
 
   const startWorkspaceBuild = useEffectEvent(async (config: SourcesConfig) => {
+    if (demoMode) {
+      setStatusNote('当前为 Demo 模式：已禁用重建索引。')
+      return
+    }
+
     setSettingsBusy(true)
     try {
       const job = await startIndexJob(config)
@@ -1986,7 +1997,7 @@ function App() {
       setJobsOpen(false)
       setShowOnboarding(false)
       setStatusNote('开始同步来源并重建索引')
-      setAgentJobs((current) => [job, ...current.filter((item) => item.id !== job.id)])
+      setAgentJobs((current) => mergeAgentJobIntoList(current, job))
     } catch (error) {
       setStatusNote(error instanceof Error ? error.message : String(error))
     } finally {
@@ -1995,6 +2006,11 @@ function App() {
   })
 
   const importInterviewQuestionBank = useEffectEvent(async (payload: InterviewImportPayload) => {
+    if (demoMode) {
+      setStatusNote('当前为 Demo 模式：已禁用导入与重建。')
+      return
+    }
+
     setImportBusy(true)
     try {
       const imported = await importInterviewEntry(payload)
@@ -2014,6 +2030,15 @@ function App() {
 
   const openAgentJob = useEffectEvent((jobId: string) => {
     setSelectedAgentJobId(jobId)
+    const job = agentJobs.find((item) => item.id === jobId) ?? null
+    if (job) {
+      setSelectedAgentJob(job)
+      if ('promptPreview' in job && typeof job.promptPreview === 'string') {
+        setAgentPromptDraft(job.promptPreview)
+      } else {
+        setAgentPromptDraft('')
+      }
+    }
     setUnreadCompletedJobIds((current) => current.filter((id) => id !== jobId))
   })
 
@@ -2092,7 +2117,7 @@ function App() {
   const cancelSelectedAgentJob = useEffectEvent(async (jobId: string) => {
     try {
       const job = await cancelAgentJob(jobId)
-      setAgentJobs((current) => current.map((item) => item.id === job.id ? job : item))
+      setAgentJobs((current) => mergeAgentJobIntoList(current, job))
       if (selectedAgentJobId === job.id) {
         setSelectedAgentJob(job)
       }
@@ -2105,7 +2130,7 @@ function App() {
     try {
       const previousContext = answerJobContexts[jobId]
       const job = await rerunAgentJob(jobId, prompt)
-      setAgentJobs((current) => [job, ...current.filter((item) => item.id !== job.id)])
+      setAgentJobs((current) => mergeAgentJobIntoList(current, job))
       if (job.kind === 'answer') {
         setQuestionJobs((current) => ({
           ...current,
@@ -2515,6 +2540,8 @@ function App() {
                 <div className="interview-workspace">
                   <InterviewQuestionStage
                     answerEffort={answerEffort}
+                    generatingQuestionId={generatingQuestionId}
+                    job={questionJobs[activeInterviewQuestion.id]}
                     onGenerate={generateAnswerForQuestion}
                     onOpenGuideFallback={(match) => {
                       openDocument(match.documentId, {
@@ -3237,6 +3264,8 @@ function KnowledgeQuestionCard(props: {
   const generated = props.detail?.generated?.output ?? props.question.generated
   const job = props.job
   const isGenerating = props.generatingQuestionId === props.question.id
+    || job?.status === 'queued'
+    || job?.status === 'running'
 
   return (
     <article className={`question-drill-card ${props.isRevisited ? 'revisited-card' : ''}`}>
@@ -3263,8 +3292,13 @@ function KnowledgeQuestionCard(props: {
 
       {job && (
         <div className={`job-banner ${job.status}`}>
-          <strong>任务状态：{job.status}</strong>
+          <strong>{job.summary ?? `任务状态：${job.status}`}</strong>
           <span>{job.error ?? `${job.model} · ${job.reasoningEffort}`}</span>
+          {job.liveText && (
+            <div className="job-live-preview">
+              <MarkdownRenderer>{job.liveText}</MarkdownRenderer>
+            </div>
+          )}
         </div>
       )}
 
@@ -3503,6 +3537,8 @@ function KnowledgePanel(props: {
 
 function InterviewQuestionStage(props: {
   answerEffort: 'low' | 'high' | 'xhigh'
+  generatingQuestionId: string | null
+  job: JobStatus | undefined
   onGenerate: (questionId: string) => Promise<void> | void
   onOpenGuideFallback: (match: QuestionDetail['guideFallbackMatches'][number]) => void
   onOpenGuideMatch: (match: QuestionDetail['guideMatches'][number]) => void
@@ -3525,6 +3561,9 @@ function InterviewQuestionStage(props: {
   const categoryLabel = readQuestionMetaString(props.question.metadata, 'primaryCategoryLabel') ?? '面经题'
   const stageSections = buildInterviewStageSections(props.question)
   const totalGuideAppearances = guideMatches.length + guideFallbackMatches.length
+  const isGenerating = props.generatingQuestionId === props.question.id
+    || props.job?.status === 'queued'
+    || props.job?.status === 'running'
 
   const renderStageSection = (section: InterviewStageSectionSpec) => {
     if (section.kind === 'source') {
@@ -3833,12 +3872,24 @@ function InterviewQuestionStage(props: {
             ))}
           </div>
 
-          <button className="primary-button" onClick={() => void props.onGenerate(props.question.id)}>
+          <button className="primary-button" disabled={isGenerating} onClick={() => void props.onGenerate(props.question.id)}>
             <Sparkles size={16} />
-            {generated ? '重新生成答案' : '生成个性化答案'}
+            {isGenerating ? '生成中…' : generated ? '重新生成答案' : '生成个性化答案'}
           </button>
         </div>
       </div>
+
+      {props.job && (
+        <div className={`job-banner ${props.job.status}`}>
+          <strong>{props.job.summary ?? '任务进行中'}</strong>
+          <span>{props.job.error ?? `${props.job.model} · ${props.job.reasoningEffort}`}</span>
+          {props.job.liveText && (
+            <div className="job-live-preview">
+              <MarkdownRenderer>{props.job.liveText}</MarkdownRenderer>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="doc-article-flow interview-stage-flow">
         {stageSections.map((section) => (
@@ -4054,12 +4105,6 @@ function readQuestionMetaString(metadata: Record<string, unknown>, key: string) 
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms)
-  })
-}
-
 function sortGuideDocuments(documents: DocumentListItem[]) {
   return [...documents].sort((left, right) => (
     compareGuideDocumentOrder(left, right)
@@ -4232,6 +4277,11 @@ function patchQuestionAcrossDocuments(cache: Record<string, DocumentData>, detai
     next[documentId] = patchQuestionInsideDocument(document, detail)
   }
   return next
+}
+
+function mergeAgentJobIntoList(current: AgentJob[], incoming: AgentJob) {
+  const next = [incoming, ...current.filter((item) => item.id !== incoming.id)]
+  return next.sort((left, right) => right.startedAt.localeCompare(left.startedAt, 'en'))
 }
 
 function compareJobTimestamps(left: Pick<AgentJob, 'finishedAt' | 'startedAt'>, right: Pick<AgentJob, 'finishedAt' | 'startedAt'>) {

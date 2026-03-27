@@ -1,0 +1,110 @@
+{
+  "id": "doc-guide-llm",
+  "kind": "guide",
+  "ext": "md",
+  "path": "sources/documents/demo/llm-guide.md",
+  "relPath": "demo/llm-guide.md",
+  "sourceId": "demo-guide-source",
+  "title": "LLM 与 RAG 面试主线（Demo）",
+  "updatedAt": "2026-03-27T09:40:00.000Z",
+  "watchPath": null,
+  "meta": {},
+  "content": "# LLM 与 RAG 面试主线\n\n## 为什么优先 RAG\n当知识变化频繁时，RAG 比微调更容易保持可追溯与低成本更新。\n\n## 系统扩展策略\n并发上升时先处理检索层和任务队列，再做模块化扩展。\n\n## 运行时配置\nPages 场景下推荐使用运行时配置，避免每次改环境都重新构建。",
+  "sections": [
+    {
+      "anchor": "why-rag",
+      "heading": "为什么优先 RAG",
+      "level": 2,
+      "startLine": 3,
+      "endLine": 6,
+      "knowledgeHitCount": 2,
+      "content": "当知识变化频繁时，RAG 比微调更容易保持可追溯与低成本更新。",
+      "relatedQuestions": [
+        {
+          "id": "demo-q-1",
+          "text": "为什么选择 RAG 而不是直接微调？",
+          "displayText": "为什么选择 RAG 而不是直接微调？",
+          "difficulty": "medium",
+          "score": 0.94,
+          "questionType": "system",
+          "translatedText": "为什么选择 RAG 而不是直接微调？",
+          "isRevisited": false,
+          "generatedCount": 1,
+          "generatedStatus": "ready",
+          "lastGeneratedAt": "2026-03-27T10:00:00.000Z",
+          "generated": {
+            "elevator_pitch": "RAG 更适合高频更新知识域。",
+            "full_answer_markdown": "优先 RAG 的原因是知识更新快、可溯源、成本可控。",
+            "work_story": "我们在项目中做了章节切片 + 检索索引，文档改动可快速生效。",
+            "work_evidence_status": "direct",
+            "work_evidence_note": "证据来自索引构建和引用回溯模块。",
+            "knowledge_map": [
+              {
+                "concept": "可追溯性",
+                "confidence": "high",
+                "why_it_matters": "回答可回链到文档章节"
+              }
+            ],
+            "follow_ups": ["什么时候考虑微调？", "如何控制检索噪声？"],
+            "missing_basics": []
+          }
+        }
+      ]
+    },
+    {
+      "anchor": "scale-strategy",
+      "heading": "系统扩展策略",
+      "level": 2,
+      "startLine": 8,
+      "endLine": 11,
+      "knowledgeHitCount": 1,
+      "content": "并发上升时先处理检索层和任务队列，再做模块化扩展。",
+      "relatedQuestions": [
+        {
+          "id": "demo-q-2",
+          "text": "并发提升 10 倍时系统先优化哪里？",
+          "displayText": "并发提升 10 倍时系统先优化哪里？",
+          "difficulty": "hard",
+          "score": 0.9,
+          "questionType": "architecture",
+          "translatedText": "并发提升 10 倍时系统先优化哪里？",
+          "isRevisited": false,
+          "generatedCount": 1,
+          "generatedStatus": "ready",
+          "lastGeneratedAt": "2026-03-27T10:02:00.000Z",
+          "generated": {
+            "elevator_pitch": "先治检索与队列瓶颈，再扩容。",
+            "full_answer_markdown": "优先定位 I/O 与检索吞吐，再拆任务队列并加缓存。",
+            "work_story": "我们把索引、生成、导入拆成独立任务，提高了可伸缩性。",
+            "work_evidence_status": "adjacent",
+            "follow_ups": ["容量预估怎么做？", "失败任务怎么补偿？"],
+            "missing_basics": []
+          }
+        }
+      ]
+    }
+  ],
+  "looseRelatedQuestions": [
+    {
+      "id": "demo-q-3",
+      "text": "为什么运行时配置比构建时写死更适合 Pages？",
+      "displayText": "为什么运行时配置比构建时写死更适合 Pages？",
+      "difficulty": "easy",
+      "score": 0.71,
+      "questionType": "frontend",
+      "translatedText": "为什么运行时配置比构建时写死更适合 Pages？",
+      "isRevisited": true,
+      "generatedCount": 1,
+      "generatedStatus": "ready",
+      "lastGeneratedAt": "2026-03-27T10:04:00.000Z",
+      "generated": {
+        "elevator_pitch": "运行时配置适配静态托管环境。",
+        "full_answer_markdown": "不重新构建即可切环境，适合 GitHub Pages 这类静态部署。",
+        "work_story": "我们把 API/WS 地址解析改成 runtime-config，在上线后可直接改配置。",
+        "work_evidence_status": "direct",
+        "follow_ups": ["缓存失效如何处理？"],
+        "missing_basics": []
+      }
+    }
+  ]
+}

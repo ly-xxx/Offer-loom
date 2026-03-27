@@ -1,0 +1,82 @@
+{
+  "id": "demo-q-2",
+  "text": "并发提升 10 倍时系统先优化哪里？",
+  "displayText": "并发提升 10 倍时系统先优化哪里？",
+  "translatedText": "并发提升 10 倍时系统先优化哪里？",
+  "difficulty": "hard",
+  "questionType": "architecture",
+  "sourceId": "demo-qbank-source",
+  "sourcePath": "question-bank/demo.md",
+  "sourceTitle": "Demo 面经题库",
+  "metadata": {
+    "primaryCategoryId": "system",
+    "primaryCategoryLabel": "系统设计",
+    "primaryCategoryOrder": 20
+  },
+  "generatedCount": 1,
+  "lastGeneratedAt": "2026-03-27T10:02:00.000Z",
+  "workEvidenceStatus": "adjacent",
+  "generationHistory": [
+    {
+      "id": "gen-demo-q-2",
+      "model": "gpt-5.4",
+      "reasoningEffort": "high",
+      "status": "ready",
+      "updatedAt": "2026-03-27T10:02:00.000Z"
+    }
+  ],
+  "generated": {
+    "id": "gen-demo-q-2",
+    "questionId": "demo-q-2",
+    "model": "gpt-5.4",
+    "reasoningEffort": "high",
+    "status": "ready",
+    "updatedAt": "2026-03-27T10:02:00.000Z",
+    "output": {
+      "elevator_pitch": "先治检索与队列瓶颈，再扩容。",
+      "full_answer_markdown": "优先定位 I/O 与检索吞吐，再拆任务队列并加缓存。",
+      "work_story": "我们把索引、生成、导入拆成独立任务，提高了可伸缩性。",
+      "work_evidence_status": "adjacent",
+      "follow_ups": ["容量预估怎么做？", "失败任务怎么补偿？"],
+      "missing_basics": []
+    },
+    "citations": [
+      {
+        "kind": "guide",
+        "label": "LLM 与 RAG 面试主线（Demo）",
+        "path": "demo/llm-guide.md"
+      }
+    ],
+    "outputMarkdown": "优先定位 I/O 与检索吞吐，再拆任务队列并加缓存。"
+  },
+  "guideMatches": [
+    {
+      "id": "gm-demo-2",
+      "documentId": "doc-guide-llm",
+      "documentTitle": "LLM 与 RAG 面试主线（Demo）",
+      "heading": "系统扩展策略",
+      "anchor": "scale-strategy",
+      "content": "并发上升时先处理检索层和任务队列，再做模块化扩展。",
+      "path": "sources/documents/demo/llm-guide.md",
+      "relPath": "demo/llm-guide.md",
+      "startLine": 8,
+      "endLine": 11,
+      "level": 2,
+      "score": 0.9
+    }
+  ],
+  "guideFallbackMatches": [],
+  "workMatches": [
+    {
+      "id": "wm-demo-2",
+      "title": "OfferLoom 架构笔记（Demo）",
+      "path": "mywork/offerloom/architecture-notes.md",
+      "relPath": "offerloom/architecture-notes.md",
+      "score": 0.78,
+      "meta": {
+        "project": "OfferLoom"
+      }
+    }
+  ],
+  "workHintMatches": []
+}

@@ -1,8 +1,10 @@
 import type {
   AgentJob,
+  CodexConsoleReply,
   CodexConsoleJob,
   DocumentData,
   DocumentListItem,
+  InterviewerReply,
   InterviewerJob,
   InterviewImportPayload,
   InterviewImportResult,
@@ -17,9 +19,65 @@ import type {
   WorkProject,
   WorkProjectDetail
 } from './types'
+import { isDemoMode, resolveApiUrl } from './runtimeConfig'
+
+function resolveDemoApiInput(input: string) {
+  const [pathname] = input.split('?')
+  if (!pathname.startsWith('/api/')) {
+    return input
+  }
+
+  if (pathname === '/api/meta') {
+    return '/demo-api/meta.json'
+  }
+  if (pathname === '/api/settings/sources') {
+    return '/demo-api/settings-sources.json'
+  }
+  if (pathname === '/api/questions') {
+    return '/demo-api/questions.json'
+  }
+  if (pathname.startsWith('/api/questions/')) {
+    const id = pathname.slice('/api/questions/'.length)
+    return `/demo-api/questions/${id}.json`
+  }
+  if (pathname === '/api/documents') {
+    return '/demo-api/documents.json'
+  }
+  if (pathname.startsWith('/api/documents/')) {
+    const id = pathname.slice('/api/documents/'.length)
+    return `/demo-api/documents/${id}.json`
+  }
+  if (pathname === '/api/search') {
+    return '/demo-api/search.json'
+  }
+  if (pathname === '/api/work-projects') {
+    return '/demo-api/work-projects.json'
+  }
+  if (pathname.startsWith('/api/work-projects/')) {
+    const id = pathname.slice('/api/work-projects/'.length)
+    return `/demo-api/work-projects/${id}.json`
+  }
+  if (pathname === '/api/agents/jobs') {
+    return '/demo-api/agents-jobs.json'
+  }
+  if (pathname.startsWith('/api/agents/jobs/')) {
+    return '/demo-api/agent-job.json'
+  }
+  if (pathname.startsWith('/api/jobs/')) {
+    return '/demo-api/answer-job.json'
+  }
+
+  return input
+}
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
+  const method = (init?.method ?? 'GET').toUpperCase()
+  if (isDemoMode() && method !== 'GET' && method !== 'HEAD') {
+    throw new Error('Demo 模式已禁用写操作，不会触发模型 token 消耗。')
+  }
+
+  const resolvedInput = isDemoMode() ? resolveDemoApiInput(input) : input
+  const response = await fetch(resolveApiUrl(resolvedInput), {
     headers: {
       'Content-Type': 'application/json'
     },
@@ -301,6 +359,206 @@ function normalizeDocumentData(value: unknown): DocumentData {
   }
 }
 
+function normalizeCodexUsage(value: unknown) {
+  const raw = readRecord(value)
+  const usage = {
+    cachedInputTokens: typeof raw.cachedInputTokens === 'number' ? raw.cachedInputTokens : undefined,
+    inputTokens: typeof raw.inputTokens === 'number' ? raw.inputTokens : undefined,
+    outputTokens: typeof raw.outputTokens === 'number' ? raw.outputTokens : undefined
+  }
+  return Object.values(usage).some((item) => typeof item === 'number') ? usage : undefined
+}
+
+function normalizeJobStatus(value: unknown): JobStatus {
+  const raw = readRecord(value)
+  return {
+    error: readNullableString(raw.error) ?? undefined,
+    finishedAt: readNullableString(raw.finishedAt) ?? undefined,
+    id: readString(raw.id),
+    kind: 'answer',
+    liveLogs: readArray<string>(raw.liveLogs).filter((item) => typeof item === 'string' && item.trim()),
+    liveText: readNullableString(raw.liveText) ?? undefined,
+    model: readString(raw.model, 'gpt-5.4'),
+    promptPreview: readNullableString(raw.promptPreview) ?? undefined,
+    questionId: readString(raw.questionId),
+    questionText: readNullableString(raw.questionText) ?? undefined,
+    reasoningEffort: readString(raw.reasoningEffort, 'high'),
+    result: isRecord(raw.result) ? normalizeGeneratedOutput(raw.result) : undefined,
+    stage: readNullableString(raw.stage) ?? undefined,
+    startedAt: readString(raw.startedAt),
+    status: readString(raw.status, 'queued') as JobStatus['status'],
+    summary: readNullableString(raw.summary) ?? undefined,
+    updatedAt: readNullableString(raw.updatedAt) ?? undefined,
+    usage: normalizeCodexUsage(raw.usage)
+  }
+}
+
+function normalizeCodexConsoleReply(value: unknown): CodexConsoleReply | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  return {
+    changed_files: readArray<Record<string, unknown>>(value.changed_files)
+      .map((item) => ({
+        path: readString(item.path),
+        summary: readString(item.summary)
+      }))
+      .filter((item) => item.path || item.summary),
+    citations: normalizeCitations(value.citations) as CodexConsoleReply['citations'],
+    follow_ups: readArray<string>(value.follow_ups).filter((item) => typeof item === 'string' && item.trim()),
+    headline: readString(value.headline),
+    mode: (['answer', 'edit', 'mixed', 'plan', 'review'] as const).includes(value.mode as never)
+      ? value.mode as CodexConsoleReply['mode']
+      : 'answer',
+    reply_markdown: readString(value.reply_markdown),
+    summary: readString(value.summary),
+    warnings: readArray<string>(value.warnings).filter((item) => typeof item === 'string' && item.trim())
+  }
+}
+
+function normalizeInterviewerReply(value: unknown): InterviewerReply | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  return {
+    assessment: readString(value.assessment),
+    citations: normalizeCitations(value.citations) as InterviewerReply['citations'],
+    follow_ups: readArray<string>(value.follow_ups).filter((item) => typeof item === 'string' && item.trim()),
+    headline: readString(value.headline),
+    interviewer_markdown: readString(value.interviewer_markdown),
+    pressure_level: value.pressure_level === 'cornering' || value.pressure_level === 'opening' || value.pressure_level === 'pressure'
+      ? value.pressure_level
+      : 'pressure',
+    pressure_points: readArray<string>(value.pressure_points).filter((item) => typeof item === 'string' && item.trim()),
+    summary: readString(value.summary)
+  }
+}
+
+function normalizeCodexConsoleJob(value: unknown): CodexConsoleJob {
+  const raw = readRecord(value)
+  return {
+    error: readNullableString(raw.error) ?? undefined,
+    finishedAt: readNullableString(raw.finishedAt) ?? undefined,
+    id: readString(raw.id),
+    kind: 'console',
+    liveLogs: readArray<string>(raw.liveLogs).filter((item) => typeof item === 'string' && item.trim()),
+    liveText: readNullableString(raw.liveText) ?? undefined,
+    messagePreview: readNullableString(raw.messagePreview) ?? undefined,
+    model: readString(raw.model, 'gpt-5.4'),
+    promptPreview: readNullableString(raw.promptPreview) ?? undefined,
+    reasoningEffort: (['low', 'medium', 'high', 'xhigh'] as const).includes(raw.reasoningEffort as never)
+      ? raw.reasoningEffort as CodexConsoleJob['reasoningEffort']
+      : 'high',
+    result: normalizeCodexConsoleReply(raw.result),
+    stage: readNullableString(raw.stage) ?? undefined,
+    startedAt: readString(raw.startedAt),
+    status: readString(raw.status, 'queued') as CodexConsoleJob['status'],
+    summary: readNullableString(raw.summary) ?? undefined,
+    updatedAt: readNullableString(raw.updatedAt) ?? undefined,
+    usage: normalizeCodexUsage(raw.usage)
+  }
+}
+
+function normalizeInterviewerJob(value: unknown): InterviewerJob {
+  const raw = readRecord(value)
+  return {
+    error: readNullableString(raw.error) ?? undefined,
+    finishedAt: readNullableString(raw.finishedAt) ?? undefined,
+    id: readString(raw.id),
+    kind: 'interviewer',
+    liveLogs: readArray<string>(raw.liveLogs).filter((item) => typeof item === 'string' && item.trim()),
+    liveText: readNullableString(raw.liveText) ?? undefined,
+    messagePreview: readNullableString(raw.messagePreview) ?? undefined,
+    model: readString(raw.model, 'gpt-5.4'),
+    promptPreview: readNullableString(raw.promptPreview) ?? undefined,
+    questionId: readString(raw.questionId),
+    questionText: readNullableString(raw.questionText) ?? undefined,
+    reasoningEffort: (['low', 'medium', 'high', 'xhigh'] as const).includes(raw.reasoningEffort as never)
+      ? raw.reasoningEffort as InterviewerJob['reasoningEffort']
+      : 'high',
+    result: normalizeInterviewerReply(raw.result),
+    seedFollowUp: readString(raw.seedFollowUp),
+    stage: readNullableString(raw.stage) ?? undefined,
+    startedAt: readString(raw.startedAt),
+    status: readString(raw.status, 'queued') as InterviewerJob['status'],
+    summary: readNullableString(raw.summary) ?? undefined,
+    updatedAt: readNullableString(raw.updatedAt) ?? undefined,
+    usage: normalizeCodexUsage(raw.usage)
+  }
+}
+
+function normalizeIndexJobStatus(value: unknown): IndexJobStatus {
+  const raw = readRecord(value)
+  const configSummary = isRecord(raw.configSummary)
+    ? {
+        guideCount: readNumber(raw.configSummary.guideCount),
+        myWorkSource: readString(raw.configSummary.myWorkSource),
+        questionBankCount: readNumber(raw.configSummary.questionBankCount)
+      }
+    : undefined
+
+  return {
+    configSummary,
+    error: readNullableString(raw.error) ?? undefined,
+    finishedAt: readNullableString(raw.finishedAt) ?? undefined,
+    id: readString(raw.id),
+    kind: 'index',
+    logs: readArray<string>(raw.logs).filter((item) => typeof item === 'string' && item.trim()),
+    progress: readNumber(raw.progress),
+    stage: readString(raw.stage, 'queued'),
+    startedAt: readString(raw.startedAt),
+    status: readString(raw.status, 'queued') as IndexJobStatus['status'],
+    summary: readString(raw.summary),
+    updatedAt: readNullableString(raw.updatedAt) ?? undefined
+  }
+}
+
+function normalizeAgentJob(value: unknown): AgentJob {
+  const raw = readRecord(value)
+  if (raw.kind === 'console') {
+    return normalizeCodexConsoleJob(raw) as AgentJob
+  }
+  if (raw.kind === 'interviewer') {
+    return normalizeInterviewerJob(raw) as AgentJob
+  }
+  if (raw.kind === 'index') {
+    return normalizeIndexJobStatus(raw)
+  }
+  return normalizeJobStatus(raw) as AgentJob
+}
+
+function subscribeEventSource<T>(
+  url: string,
+  normalize: (value: unknown) => T,
+  onMessage: (value: T) => void,
+  onError?: () => void
+) {
+  if (isDemoMode()) {
+    return () => {}
+  }
+
+  const source = new EventSource(resolveApiUrl(url))
+
+  source.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data) as unknown
+      onMessage(normalize(payload))
+    } catch {
+      // Ignore malformed stream chunks and keep the stream alive.
+    }
+  }
+
+  source.onerror = () => {
+    onError?.()
+  }
+
+  return () => {
+    source.close()
+  }
+}
+
 export function fetchMeta() {
   return request<MetaResponse>('/api/meta')
 }
@@ -373,14 +631,16 @@ export function startAnswerGeneration(body: {
   reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh'
   selectedDocumentIds: string[]
 }) {
-  return request<JobStatus>('/api/generated', {
+  return request<unknown>('/api/generated', {
     method: 'POST',
     body: JSON.stringify(body)
   })
+    .then((item) => normalizeJobStatus(item))
 }
 
 export function fetchJob(jobId: string) {
-  return request<JobStatus>(`/api/jobs/${jobId}`)
+  return request<unknown>(`/api/jobs/${jobId}`)
+    .then((item) => normalizeJobStatus(item))
 }
 
 export function startCodexConsoleJob(body: {
@@ -393,20 +653,23 @@ export function startCodexConsoleJob(body: {
   selectedDocumentIds: string[]
   selectedProjectIds: string[]
 }) {
-  return request<CodexConsoleJob>('/api/codex-console/jobs', {
+  return request<unknown>('/api/codex-console/jobs', {
     method: 'POST',
     body: JSON.stringify(body)
   })
+    .then((item) => normalizeCodexConsoleJob(item))
 }
 
 export function fetchCodexConsoleJob(jobId: string) {
-  return request<CodexConsoleJob>(`/api/codex-console/jobs/${jobId}`)
+  return request<unknown>(`/api/codex-console/jobs/${jobId}`)
+    .then((item) => normalizeCodexConsoleJob(item))
 }
 
 export function cancelCodexConsoleJob(jobId: string) {
-  return request<CodexConsoleJob>(`/api/codex-console/jobs/${jobId}/cancel`, {
+  return request<unknown>(`/api/codex-console/jobs/${jobId}/cancel`, {
     method: 'POST'
   })
+    .then((item) => normalizeCodexConsoleJob(item))
 }
 
 export function startInterviewerJob(body: {
@@ -416,56 +679,74 @@ export function startInterviewerJob(body: {
   reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh'
   seedFollowUp: string
 }) {
-  return request<InterviewerJob>('/api/interviewer/jobs', {
+  return request<unknown>('/api/interviewer/jobs', {
     method: 'POST',
     body: JSON.stringify(body)
   })
+    .then((item) => normalizeInterviewerJob(item))
 }
 
 export function fetchInterviewerJob(jobId: string) {
-  return request<InterviewerJob>(`/api/interviewer/jobs/${jobId}`)
+  return request<unknown>(`/api/interviewer/jobs/${jobId}`)
+    .then((item) => normalizeInterviewerJob(item))
 }
 
 export function cancelInterviewerJob(jobId: string) {
-  return request<InterviewerJob>(`/api/interviewer/jobs/${jobId}/cancel`, {
+  return request<unknown>(`/api/interviewer/jobs/${jobId}/cancel`, {
     method: 'POST'
   })
+    .then((item) => normalizeInterviewerJob(item))
 }
 
 export function startIndexJob(config: SourcesConfig) {
-  return request<IndexJobStatus>('/api/index/jobs', {
+  return request<unknown>('/api/index/jobs', {
     method: 'POST',
     body: JSON.stringify({ config })
   })
+    .then((item) => normalizeIndexJobStatus(item))
 }
 
 export function fetchIndexJob(jobId: string) {
-  return request<IndexJobStatus>(`/api/index/jobs/${jobId}`)
+  return request<unknown>(`/api/index/jobs/${jobId}`)
+    .then((item) => normalizeIndexJobStatus(item))
 }
 
 export function cancelIndexJob(jobId: string) {
-  return request<IndexJobStatus>(`/api/index/jobs/${jobId}/cancel`, {
+  return request<unknown>(`/api/index/jobs/${jobId}/cancel`, {
     method: 'POST'
   })
+    .then((item) => normalizeIndexJobStatus(item))
 }
 
 export function fetchAgentJobs() {
-  return request<AgentJob[]>('/api/agents/jobs')
+  return request<unknown[]>('/api/agents/jobs')
+    .then((items) => items.map((item) => normalizeAgentJob(item)))
 }
 
 export function fetchAgentJob(jobId: string) {
-  return request<AgentJob>(`/api/agents/jobs/${jobId}`)
+  return request<unknown>(`/api/agents/jobs/${jobId}`)
+    .then((item) => normalizeAgentJob(item))
 }
 
 export function cancelAgentJob(jobId: string) {
-  return request<AgentJob>(`/api/agents/jobs/${jobId}/cancel`, {
+  return request<unknown>(`/api/agents/jobs/${jobId}/cancel`, {
     method: 'POST'
   })
+    .then((item) => normalizeAgentJob(item))
 }
 
 export function rerunAgentJob(jobId: string, promptOverride?: string) {
-  return request<AgentJob>(`/api/agents/jobs/${jobId}/rerun`, {
+  return request<unknown>(`/api/agents/jobs/${jobId}/rerun`, {
     method: 'POST',
     body: JSON.stringify({ promptOverride })
   })
+    .then((item) => normalizeAgentJob(item))
+}
+
+export function subscribeAgentJobsStream(onMessage: (job: AgentJob) => void, onError?: () => void) {
+  return subscribeEventSource('/api/agents/jobs/stream', normalizeAgentJob, onMessage, onError)
+}
+
+export function subscribeAgentJobStream(jobId: string, onMessage: (job: AgentJob) => void, onError?: () => void) {
+  return subscribeEventSource(`/api/agents/jobs/${jobId}/stream`, normalizeAgentJob, onMessage, onError)
 }

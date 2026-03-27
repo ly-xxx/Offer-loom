@@ -1,4 +1,4 @@
-name: Deploy Static Demo To GitHub Pages
+name: Deploy Web Demo To GitHub Pages
 
 on:
   push:
@@ -15,11 +15,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  package:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Web
+        run: npm run build:web
+
+      - name: Configure Demo Runtime
+        run: |
+          cat > web/dist/runtime-config.json <<'EOF'
+          {
+            "apiBaseUrl": ".",
+            "wsBaseUrl": ".",
+            "demoMode": true
+          }
+          EOF
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -27,10 +49,10 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: demo
+          path: web/dist
 
   deploy:
-    needs: package
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages

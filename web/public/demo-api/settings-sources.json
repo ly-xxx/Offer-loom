@@ -1,0 +1,66 @@
+{
+  "autoDetectedMyWorkPath": "./mywork",
+  "config": {
+    "guides": [
+      {
+        "id": "demo-guide-source",
+        "kind": "guide",
+        "type": "git",
+        "url": "https://github.com/example/demo-guide",
+        "branch": "main"
+      }
+    ],
+    "questionBanks": [
+      {
+        "id": "demo-qbank-source",
+        "kind": "question_bank",
+        "type": "git",
+        "url": "https://github.com/example/demo-qbank",
+        "branch": "main"
+      }
+    ],
+    "myWork": {
+      "id": "demo-mywork",
+      "kind": "work_root",
+      "type": "local",
+      "path": "./mywork",
+      "supplementalRoots": []
+    }
+  },
+  "defaultConfig": {
+    "guides": [
+      {
+        "id": "demo-guide-source",
+        "kind": "guide",
+        "type": "git",
+        "url": "https://github.com/example/demo-guide",
+        "branch": "main"
+      }
+    ],
+    "questionBanks": [
+      {
+        "id": "demo-qbank-source",
+        "kind": "question_bank",
+        "type": "git",
+        "url": "https://github.com/example/demo-qbank",
+        "branch": "main"
+      }
+    ],
+    "myWork": {
+      "id": "demo-mywork",
+      "kind": "work_root",
+      "type": "local",
+      "path": "./mywork",
+      "supplementalRoots": []
+    }
+  },
+  "discoveredSources": {
+    "guides": [],
+    "questionBanks": []
+  },
+  "initialized": true,
+  "paths": {
+    "runtimeConfigPath": "./config/sources.runtime.json",
+    "runtimeManifestPath": "./config/sources.manifest.json"
+  }
+}

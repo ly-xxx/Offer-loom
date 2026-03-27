@@ -80,29 +80,35 @@ npm run setup:serve
 ## GitHub Pages Demo（自动同步）
 
 仓库已包含 GitHub Pages 自动发布工作流：[`.github/workflows/pages.yml`](./.github/workflows/pages.yml)。  
-当前发布的是 `demo/` 目录下的**纯静态展示页**，不会请求后端，也不会触发模型调用。
+当前发布的是 `web/` 前端本体（与你本地 UI 一致），但会在部署时自动切到 `demoMode`：
+
+- 前端请求会转到 `web/public/demo-api/*.json` 示例数据
+- 写操作（生成答案、重建索引、导入等）会被禁用
+- 不会调用后端，也不会触发模型 token 消耗
 
 ### 开启步骤
 
 1. 打开仓库 `Settings -> Pages`。
 2. `Build and deployment` 选择 `Source: GitHub Actions`。
-3. 推送一次 `main` 分支，等待 `Deploy Static Demo To GitHub Pages` 工作流完成。
+3. 推送一次 `main` 分支，等待 `Deploy Web Demo To GitHub Pages` 工作流完成。
 
-### 展示数据与运行时文案
+### 展示数据与 Demo 配置
 
-你可以直接改这两个文件来更新线上展示内容：
+你可以直接改这些文件来更新线上展示内容：
 
-- `demo/runtime-config.json`: 站点标题、副标题、更新时间
-- `demo/data/demo-data.json`: 统计卡片、章节进度、题目与回答示例
+- `web/public/demo-api/meta.json`
+- `web/public/demo-api/questions.json`
+- `web/public/demo-api/questions/*.json`
+- `web/public/demo-api/documents*.json`
+- `web/public/demo-api/work-projects*.json`
 
-例如，`demo/runtime-config.json`：
+工作流会在发布时自动生成 `runtime-config.json` 并启用 `demoMode`：
 
 ```json
 {
-  "siteTitle": "OfferLoom Demo (Static)",
-  "subtitle": "纯前端展示版：只读取示例 JSON，不会发起任何模型请求。",
-  "demoBadge": "Demo Mode · 0 Token Cost",
-  "lastUpdated": "2026-03-27"
+  "apiBaseUrl": ".",
+  "wsBaseUrl": ".",
+  "demoMode": true
 }
 ```
 

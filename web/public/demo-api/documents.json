@@ -1,0 +1,24 @@
+[
+  {
+    "id": "doc-guide-llm",
+    "kind": "guide",
+    "ext": "md",
+    "path": "sources/documents/demo/llm-guide.md",
+    "relPath": "demo/llm-guide.md",
+    "sourceId": "demo-guide-source",
+    "title": "LLM 与 RAG 面试主线（Demo）",
+    "updatedAt": "2026-03-27T09:40:00.000Z",
+    "knowledgeHitCount": 3
+  },
+  {
+    "id": "doc-work-offerloom",
+    "kind": "work",
+    "ext": "md",
+    "path": "mywork/offerloom/architecture-notes.md",
+    "relPath": "offerloom/architecture-notes.md",
+    "sourceId": "demo-mywork",
+    "title": "OfferLoom 架构笔记（Demo）",
+    "updatedAt": "2026-03-27T09:45:00.000Z",
+    "knowledgeHitCount": 2
+  }
+]

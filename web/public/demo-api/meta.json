@@ -1,0 +1,19 @@
+{
+  "counts": {
+    "documents": 2,
+    "generatedAnswers": 3,
+    "guides": 1,
+    "questions": 3,
+    "translatedQuestions": 3,
+    "workProjects": 1
+  },
+  "embeddingError": "",
+  "embeddingModel": "demo-static",
+  "models": ["gpt-5.4"],
+  "reasoningEfforts": ["low", "medium", "high", "xhigh"],
+  "retrievalMode": "demo-static",
+  "workIndexSummary": {
+    "indexed": 1,
+    "total": 1
+  }
+}
