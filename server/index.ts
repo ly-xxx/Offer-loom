@@ -11,6 +11,7 @@ import { WebSocketServer } from 'ws'
 import { AnswerJobManager, InterviewerModeManager, ManagedCodexConsoleManager, attachCodexPty } from './lib/codex.js'
 import { IndexJobManager } from './lib/indexer.js'
 import { saveManualInterviewImport } from './lib/interviewImports.js'
+import { jobEvents } from './lib/jobEvents.js'
 import { PORT, WEB_DIST_DIR } from './lib/constants.js'
 import { OfferPotatoDb } from './lib/db.js'
 import { readSourcesSettingsSnapshot, saveRuntimeSourcesConfig, type OfferPotatoSourcesConfig } from './lib/runtimeConfig.js'
@@ -21,6 +22,22 @@ const jobManager = new AnswerJobManager(db)
 const consoleManager = new ManagedCodexConsoleManager(db)
 const interviewerManager = new InterviewerModeManager(db)
 const indexManager = new IndexJobManager(db)
+
+function listAllJobs() {
+  return sortJobs([
+    ...jobManager.listJobs(),
+    ...consoleManager.listJobs(),
+    ...interviewerManager.listJobs(),
+    ...indexManager.listJobs()
+  ])
+}
+
+function findJobById(jobId: string) {
+  return jobManager.getJob(jobId)
+    ?? consoleManager.getJob(jobId)
+    ?? interviewerManager.getJob(jobId)
+    ?? indexManager.getJob(jobId)
+}
 
 app.use(express.json({ limit: '12mb' }))
 
@@ -324,20 +341,57 @@ app.get('/api/work-projects/:id', (request, response) => {
   response.json(project)
 })
 
+app.get('/api/agents/jobs/stream', (request, response) => {
+  openJobEventStream(response)
+
+  for (const job of listAllJobs()) {
+    writeSseJob(response, job)
+  }
+
+  const unsubscribe = jobEvents.subscribe((job) => {
+    writeSseJob(response, job)
+  })
+
+  const heartbeat = setInterval(() => {
+    response.write(': keepalive\n\n')
+  }, 15000)
+
+  request.on('close', () => {
+    clearInterval(heartbeat)
+    unsubscribe()
+    response.end()
+  })
+})
+
+app.get('/api/agents/jobs/:jobId/stream', (request, response) => {
+  openJobEventStream(response)
+
+  const existing = findJobById(request.params.jobId)
+  if (existing) {
+    writeSseJob(response, existing)
+  }
+
+  const unsubscribe = jobEvents.subscribeJob(request.params.jobId, (job) => {
+    writeSseJob(response, job)
+  })
+
+  const heartbeat = setInterval(() => {
+    response.write(': keepalive\n\n')
+  }, 15000)
+
+  request.on('close', () => {
+    clearInterval(heartbeat)
+    unsubscribe()
+    response.end()
+  })
+})
+
 app.get('/api/agents/jobs', (_request, response) => {
-  response.json(sortJobs([
-    ...jobManager.listJobs(),
-    ...consoleManager.listJobs(),
-    ...interviewerManager.listJobs(),
-    ...indexManager.listJobs()
-  ]))
+  response.json(listAllJobs())
 })
 
 app.get('/api/agents/jobs/:jobId', (request, response) => {
-  const job = jobManager.getJob(request.params.jobId)
-    ?? consoleManager.getJob(request.params.jobId)
-    ?? interviewerManager.getJob(request.params.jobId)
-    ?? indexManager.getJob(request.params.jobId)
+  const job = findJobById(request.params.jobId)
   if (!job) {
     response.status(404).json({ error: 'Job not found' })
     return
@@ -513,6 +567,17 @@ function buildProxyWarning(urls: string[]) {
     '[OfferPotato] If localhost or LAN access shows 502 / Bad Gateway, add these hosts to NO_PROXY or your browser bypass list:',
     `[OfferPotato] ${hostHints}`
   ].join('\n')
+}
+
+function openJobEventStream(response: express.Response) {
+  response.setHeader('Cache-Control', 'no-cache, no-transform')
+  response.setHeader('Connection', 'keep-alive')
+  response.setHeader('Content-Type', 'text/event-stream')
+  response.flushHeaders?.()
+}
+
+function writeSseJob(response: express.Response, job: unknown) {
+  response.write(`data: ${JSON.stringify(job)}\n\n`)
 }
 
 function sortJobs<T extends { startedAt: string }>(jobs: T[]) {

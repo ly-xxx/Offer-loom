@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import { ROOT_DIR, SCRIPTS_DIR } from './constants.js'
 import type { OfferPotatoDb } from './db.js'
+import { jobEvents } from './jobEvents.js'
 import {
   ensureRuntimeManifest,
   readSourcesSettingsSnapshot,
@@ -11,7 +12,7 @@ import {
   type OfferPotatoSourcesConfig
 } from './runtimeConfig.js'
 
-const INDEX_PROGRESS_PREFIXES = ['[OfferPotatoProgress]']
+const INDEX_PROGRESS_PREFIXES = ['[OfferPotatoProgress]', '[OfferLoomProgress]']
 
 type IndexJobStage =
   | 'queued'
@@ -37,6 +38,7 @@ export type IndexJobStatus = {
   startedAt: string
   status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
   summary: string
+  updatedAt?: string
 }
 
 type StartIndexOptions = {
@@ -75,6 +77,7 @@ export class IndexJobManager {
       summary: '等待开始'
     }
     this.jobs.set(jobId, job)
+    this.publish(job)
     void this.run(jobId, options)
     return job
   }
@@ -92,6 +95,7 @@ export class IndexJobManager {
     job.finishedAt = new Date().toISOString()
     job.summary = '索引任务已取消'
     this.pushLog(job, '索引任务已取消')
+    this.publish(job)
 
     const child = this.running.get(jobId)
     if (child && child.exitCode === null) {
@@ -114,11 +118,13 @@ export class IndexJobManager {
 
     const tempDbPath = path.join(ROOT_DIR, 'data', `${jobId}.db`)
     job.status = 'running'
+    this.publish(job)
 
     try {
       job.stage = 'writing_config'
       job.progress = 0.05
       job.summary = '保存运行时配置'
+      this.publish(job)
       if (options.config) {
         await saveRuntimeSourcesConfig(options.config)
       } else {
@@ -137,12 +143,14 @@ export class IndexJobManager {
       job.stage = 'syncing_sources'
       job.progress = 0.14
       job.summary = '同步远程仓库与本地来源'
+      this.publish(job)
       await this.runNodeScript(jobId, 'bootstrap.mjs', {
         onLine: (line) => {
           this.pushLog(job, line)
           if (/bootstrap complete/i.test(line)) {
             job.progress = Math.max(job.progress, 0.26)
             job.summary = '远程来源同步完成'
+            this.publish(job)
           }
         }
       })
@@ -153,10 +161,12 @@ export class IndexJobManager {
       job.stage = 'building_index'
       job.progress = 0.3
       job.summary = '构建分层检索索引与工作文档链接'
+      this.publish(job)
       await fs.rm(tempDbPath, { force: true })
       await this.runNodeScript(jobId, 'build-db.mjs', {
         env: {
           OFFERPOTATO_DB_PATH: tempDbPath,
+          OFFERLOOM_DB_PATH: tempDbPath
         },
         onLine: (line) => {
           const progressEvent = parseProgressEvent(line)
@@ -164,6 +174,7 @@ export class IndexJobManager {
             job.progress = Number((0.3 + progressEvent.progress * 0.6).toFixed(4))
             job.summary = progressEvent.detail
             this.pushLog(job, `${progressEvent.stage}: ${progressEvent.detail}`)
+            this.publish(job)
             return
           }
           this.pushLog(job, line)
@@ -177,6 +188,7 @@ export class IndexJobManager {
       job.stage = 'swapping_database'
       job.progress = 0.94
       job.summary = '热切换数据库并刷新站点索引'
+      this.publish(job)
       await this.swapLiveDatabase(tempDbPath)
 
       job.stage = 'ready'
@@ -185,6 +197,7 @@ export class IndexJobManager {
       job.summary = '索引构建完成，页面数据已切换到最新版本'
       job.finishedAt = new Date().toISOString()
       this.pushLog(job, '数据库热切换完成')
+      this.publish(job)
     } catch (error) {
       if (this.jobs.get(jobId)?.status === 'cancelled') {
         await fs.rm(tempDbPath, { force: true }).catch(() => {})
@@ -195,6 +208,7 @@ export class IndexJobManager {
       job.error = error instanceof Error ? error.message : String(error)
       job.summary = '索引构建失败'
       this.pushLog(job, `失败: ${job.error}`)
+      this.publish(job)
       await fs.rm(tempDbPath, { force: true }).catch(() => {})
     } finally {
       this.running.delete(jobId)
@@ -290,6 +304,12 @@ export class IndexJobManager {
       return
     }
     job.logs = [...job.logs.slice(-79), cleaned]
+    this.publish(job)
+  }
+
+  private publish(job: IndexJobStatus) {
+    job.updatedAt = new Date().toISOString()
+    jobEvents.publish(job)
   }
 }
 

@@ -7,15 +7,24 @@ import type { WebSocket } from 'ws'
 
 import { CONSOLE_SCHEMA_PATH, GENERATED_DIR, INTERVIEWER_SCHEMA_PATH, ROOT_DIR, SCHEMA_PATH, SKILLS_DIR } from './constants.js'
 import type { OfferPotatoDb } from './db.js'
+import { jobEvents } from './jobEvents.js'
 import { readLiveContent, trimExcerpt } from './text.js'
 
 type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
+
+type CodexUsage = {
+  cachedInputTokens?: number
+  inputTokens?: number
+  outputTokens?: number
+}
 
 type JobStatus = {
   error?: string
   finishedAt?: string
   id: string
   kind: 'answer'
+  liveLogs?: string[]
+  liveText?: string
   model: string
   promptPreview?: string
   questionId: string
@@ -26,6 +35,8 @@ type JobStatus = {
   startedAt: string
   status: 'cancelled' | 'queued' | 'running' | 'ready' | 'failed'
   summary: string
+  updatedAt?: string
+  usage?: CodexUsage
 }
 
 type GenerateOptions = {
@@ -66,6 +77,8 @@ export type ConsoleJobStatus = {
   finishedAt?: string
   id: string
   kind: 'console'
+  liveLogs?: string[]
+  liveText?: string
   model: string
   messagePreview?: string
   promptPreview?: string
@@ -75,6 +88,8 @@ export type ConsoleJobStatus = {
   startedAt: string
   status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
   summary: string
+  updatedAt?: string
+  usage?: CodexUsage
 }
 
 export type InterviewerReply = {
@@ -97,6 +112,8 @@ export type InterviewerJobStatus = {
   finishedAt?: string
   id: string
   kind: 'interviewer'
+  liveLogs?: string[]
+  liveText?: string
   messagePreview?: string
   model: string
   promptPreview?: string
@@ -109,6 +126,8 @@ export type InterviewerJobStatus = {
   startedAt: string
   status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
   summary: string
+  updatedAt?: string
+  usage?: CodexUsage
 }
 
 type ConsoleOptions = {
@@ -149,6 +168,110 @@ type ConsoleProjectContext = {
   summary: string
 }
 
+type StreamableCodexJob = JobStatus | ConsoleJobStatus | InterviewerJobStatus
+
+type CodexJsonEvent = {
+  item?: {
+    text?: string
+    type?: string
+  }
+  type?: string
+  usage?: {
+    cached_input_tokens?: number
+    input_tokens?: number
+    output_tokens?: number
+  }
+} & Record<string, unknown>
+
+function publishCodexJob(job: StreamableCodexJob) {
+  job.updatedAt = new Date().toISOString()
+  jobEvents.publish(job)
+}
+
+function pushCodexLiveLog(job: StreamableCodexJob, line: string) {
+  const cleaned = line.replace(/\s+/g, ' ').trim()
+  if (!cleaned) {
+    return
+  }
+  job.liveLogs = [...(job.liveLogs ?? []).slice(-23), trimExcerpt(cleaned, 200)]
+  publishCodexJob(job)
+}
+
+function setCodexLiveText(job: StreamableCodexJob, text: string | null) {
+  const cleaned = text?.trim()
+  if (!cleaned || job.liveText === cleaned) {
+    return
+  }
+  job.liveText = cleaned
+  publishCodexJob(job)
+}
+
+function setCodexUsage(job: StreamableCodexJob, usage: CodexUsage) {
+  job.usage = usage
+  publishCodexJob(job)
+}
+
+function readCodexUsage(event: CodexJsonEvent): CodexUsage | null {
+  const usage = event.usage
+  if (!usage || typeof usage !== 'object') {
+    return null
+  }
+
+  const result: CodexUsage = {}
+  if (typeof usage.input_tokens === 'number') {
+    result.inputTokens = usage.input_tokens
+  }
+  if (typeof usage.cached_input_tokens === 'number') {
+    result.cachedInputTokens = usage.cached_input_tokens
+  }
+  if (typeof usage.output_tokens === 'number') {
+    result.outputTokens = usage.output_tokens
+  }
+
+  return Object.keys(result).length > 0 ? result : null
+}
+
+function readAgentMessageText(event: CodexJsonEvent) {
+  const item = event.item
+  if (!item || item.type !== 'agent_message' || typeof item.text !== 'string') {
+    return null
+  }
+  return item.text
+}
+
+function extractAnswerLivePreview(raw: string) {
+  return extractStructuredPreview(raw, ['full_answer_markdown', 'elevator_pitch', 'work_story', 'summary'])
+}
+
+function extractConsoleLivePreview(raw: string) {
+  return extractStructuredPreview(raw, ['reply_markdown', 'summary', 'headline'])
+}
+
+function extractInterviewerLivePreview(raw: string) {
+  return extractStructuredPreview(raw, ['interviewer_markdown', 'summary', 'headline'])
+}
+
+function extractStructuredPreview(raw: string, keys: string[]) {
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    for (const key of keys) {
+      const value = parsed[key]
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim()
+      }
+    }
+  } catch {
+    return trimmed
+  }
+
+  return trimmed
+}
+
 export class AnswerJobManager {
   private readonly db: OfferPotatoDb
   private readonly jobs = new Map<string, JobStatus>()
@@ -171,6 +294,7 @@ export class AnswerJobManager {
     const job: JobStatus = {
       id: jobId,
       kind: 'answer',
+      liveLogs: [],
       model: options.model,
       questionId: options.questionId,
       reasoningEffort: options.reasoningEffort,
@@ -180,6 +304,7 @@ export class AnswerJobManager {
       summary: '等待生成'
     }
     this.jobs.set(jobId, job)
+    publishCodexJob(job)
 
     void this.run(jobId, options)
     return job
@@ -199,6 +324,8 @@ export class AnswerJobManager {
     job.summary = '任务已取消'
     job.finishedAt = new Date().toISOString()
     job.error = '任务已取消'
+    pushCodexLiveLog(job, '任务已取消')
+    publishCodexJob(job)
 
     const child = this.running.get(jobId)
     if (child && child.exitCode === null) {
@@ -238,6 +365,7 @@ export class AnswerJobManager {
     job.status = 'running'
     job.stage = 'loading_question'
     job.summary = '读取题目与上下文'
+    publishCodexJob(job)
 
     try {
       const question = this.db.getQuestion(options.questionId)
@@ -253,6 +381,7 @@ export class AnswerJobManager {
 
       job.stage = 'hydrating_context'
       job.summary = '整理引用文档与 mywork 证据'
+      publishCodexJob(job)
       const selectedDocs = await hydrateDocuments(this.db.getDocumentsByIds([...selectedIds]))
       const workDocs = await hydrateDocuments(this.db.getDocumentsByIds(
         question.workMatches
@@ -268,15 +397,47 @@ export class AnswerJobManager {
       const skillTexts = await readPromptSkills(['answer-composer.md', 'mywork-triage.md', 'project-interviewer.md'])
       job.stage = 'building_prompt'
       job.summary = '拼装答案生成 prompt'
+      publishCodexJob(job)
       const prompt = options.promptOverride?.trim()
         ? options.promptOverride.trim()
         : buildPrompt(skillTexts, question, workDocs, fallbackWorkDocs, selectedDocs)
       job.promptPreview = prompt
+      publishCodexJob(job)
       const outputFile = path.join(os.tmpdir(), `offerpotato-live-${job.id}.json`)
       job.stage = 'running_codex'
       job.summary = 'Codex 正在生成个性化答案'
+      pushCodexLiveLog(job, 'Codex 会话已启动')
+      publishCodexJob(job)
       const raw = await runCodexExec({
         model: options.model,
+        onEvent: (event) => {
+          const usage = readCodexUsage(event)
+          if (usage) {
+            setCodexUsage(job, usage)
+          }
+
+          if (event.type === 'thread.started') {
+            pushCodexLiveLog(job, '线程已建立')
+            return
+          }
+
+          if (event.type === 'turn.started') {
+            pushCodexLiveLog(job, '开始生成回答草稿')
+            return
+          }
+
+          if (event.type === 'turn.completed') {
+            pushCodexLiveLog(job, '结构化输出已完成')
+          }
+        },
+        onLogLine: (line, stream) => {
+          if (stream === 'stderr') {
+            pushCodexLiveLog(job, line)
+          }
+        },
+        onMessage: (text) => {
+          setCodexLiveText(job, extractAnswerLivePreview(text))
+        },
         onSpawn: (child) => {
           this.running.set(jobId, child)
         },
@@ -294,6 +455,7 @@ export class AnswerJobManager {
 
       job.stage = 'persisting'
       job.summary = '写入数据库与答案缓存'
+      publishCodexJob(job)
       this.db.upsertGeneratedAnswer({
         id: generatedId,
         questionId: options.questionId,
@@ -328,6 +490,7 @@ export class AnswerJobManager {
       job.summary = '答案已生成'
       job.result = parsed
       job.finishedAt = new Date().toISOString()
+      publishCodexJob(job)
     } catch (error) {
       if (this.jobs.get(jobId)?.status === 'cancelled') {
         return
@@ -337,6 +500,8 @@ export class AnswerJobManager {
       job.summary = '答案生成失败'
       job.error = error instanceof Error ? error.message : String(error)
       job.finishedAt = new Date().toISOString()
+      pushCodexLiveLog(job, job.error)
+      publishCodexJob(job)
     } finally {
       this.running.delete(jobId)
     }
@@ -365,6 +530,7 @@ export class ManagedCodexConsoleManager {
     const job: ConsoleJobStatus = {
       id: jobId,
       kind: 'console',
+      liveLogs: [],
       messagePreview: trimExcerpt(options.message, 600),
       model: options.model,
       reasoningEffort: options.reasoningEffort,
@@ -375,6 +541,7 @@ export class ManagedCodexConsoleManager {
     }
 
     this.jobs.set(jobId, job)
+    publishCodexJob(job)
     void this.run(jobId, options)
     return job
   }
@@ -411,6 +578,8 @@ export class ManagedCodexConsoleManager {
     job.summary = '任务已取消'
     job.finishedAt = new Date().toISOString()
     job.error = '任务已取消'
+    pushCodexLiveLog(job, '任务已取消')
+    publishCodexJob(job)
 
     const child = this.running.get(jobId)
     if (child && child.exitCode === null) {
@@ -434,6 +603,7 @@ export class ManagedCodexConsoleManager {
     job.status = 'running'
     job.stage = 'collecting_context'
     job.summary = '整理当前文档与引用上下文'
+    publishCodexJob(job)
 
     try {
       const selectedIds = new Set(options.selectedDocumentIds)
@@ -465,6 +635,7 @@ export class ManagedCodexConsoleManager {
       const skillText = await readPromptSkills(['codex-console.md'])
       job.stage = 'building_prompt'
       job.summary = '拼装受管控制台 prompt'
+      publishCodexJob(job)
       const prompt = options.promptOverride?.trim()
         ? options.promptOverride.trim()
         : buildConsolePrompt(skillText, {
@@ -475,12 +646,43 @@ export class ManagedCodexConsoleManager {
           selectedProjects: selectedProjects.filter((item): item is NonNullable<typeof item> => Boolean(item))
         })
       job.promptPreview = prompt
+      publishCodexJob(job)
 
       const outputFile = path.join(os.tmpdir(), `offerpotato-console-${job.id}.json`)
       job.stage = 'running_codex'
       job.summary = 'Codex 正在处理中'
+      pushCodexLiveLog(job, 'Codex 会话已启动')
+      publishCodexJob(job)
       const raw = await runCodexExec({
         model: options.model,
+        onEvent: (event) => {
+          const usage = readCodexUsage(event)
+          if (usage) {
+            setCodexUsage(job, usage)
+          }
+
+          if (event.type === 'thread.started') {
+            pushCodexLiveLog(job, '线程已建立')
+            return
+          }
+
+          if (event.type === 'turn.started') {
+            pushCodexLiveLog(job, '开始处理当前请求')
+            return
+          }
+
+          if (event.type === 'turn.completed') {
+            pushCodexLiveLog(job, '回复结构已生成')
+          }
+        },
+        onLogLine: (line, stream) => {
+          if (stream === 'stderr') {
+            pushCodexLiveLog(job, line)
+          }
+        },
+        onMessage: (text) => {
+          setCodexLiveText(job, extractConsoleLivePreview(text))
+        },
         onSpawn: (child) => {
           this.running.set(jobId, child)
         },
@@ -501,6 +703,7 @@ export class ManagedCodexConsoleManager {
       job.summary = '回复已生成'
       job.result = parsed
       job.finishedAt = new Date().toISOString()
+      publishCodexJob(job)
     } catch (error) {
       if (this.jobs.get(jobId)?.status === 'cancelled') {
         return
@@ -510,6 +713,8 @@ export class ManagedCodexConsoleManager {
       job.summary = '控制台任务失败'
       job.error = error instanceof Error ? error.message : String(error)
       job.finishedAt = new Date().toISOString()
+      pushCodexLiveLog(job, job.error)
+      publishCodexJob(job)
     } finally {
       this.running.delete(jobId)
     }
@@ -539,6 +744,7 @@ export class InterviewerModeManager {
     const job: InterviewerJobStatus = {
       id: jobId,
       kind: 'interviewer',
+      liveLogs: [],
       messagePreview: trimExcerpt(previewSource, 420),
       model: 'gpt-5.4',
       promptPreview: undefined,
@@ -552,6 +758,7 @@ export class InterviewerModeManager {
     }
 
     this.jobs.set(jobId, job)
+    publishCodexJob(job)
     void this.run(jobId, options)
     return job
   }
@@ -586,6 +793,8 @@ export class InterviewerModeManager {
     job.summary = '面试官回合已取消'
     job.finishedAt = new Date().toISOString()
     job.error = '任务已取消'
+    pushCodexLiveLog(job, '任务已取消')
+    publishCodexJob(job)
 
     const child = this.running.get(jobId)
     if (child && child.exitCode === null) {
@@ -609,6 +818,7 @@ export class InterviewerModeManager {
     job.status = 'running'
     job.stage = 'loading_question'
     job.summary = '读取题目、答案和证据上下文'
+    publishCodexJob(job)
 
     try {
       const question = this.db.getQuestion(options.questionId)
@@ -619,6 +829,7 @@ export class InterviewerModeManager {
 
       job.stage = 'hydrating_context'
       job.summary = '整理主线锚点与项目证据'
+      publishCodexJob(job)
       const workDocs = await hydrateDocuments(this.db.getDocumentsByIds(
         question.workMatches
           .map((match) => match.id)
@@ -634,6 +845,7 @@ export class InterviewerModeManager {
 
       job.stage = 'building_prompt'
       job.summary = '拼装面试官压力面 prompt'
+      publishCodexJob(job)
       const prompt = options.promptOverride?.trim()
         ? options.promptOverride.trim()
         : buildInterviewerPrompt(skillText, {
@@ -645,14 +857,45 @@ export class InterviewerModeManager {
           workDocs
         })
       job.promptPreview = prompt
+      publishCodexJob(job)
 
       const outputFile = path.join(os.tmpdir(), `offerpotato-interviewer-${job.id}.json`)
       job.stage = 'running_codex'
       job.summary = options.candidateAnswer?.trim()
         ? '面试官正在继续深挖'
         : '面试官正在进入首轮施压'
+      pushCodexLiveLog(job, 'Codex 会话已启动')
+      publishCodexJob(job)
       const raw = await runCodexExec({
         model: 'gpt-5.4',
+        onEvent: (event) => {
+          const usage = readCodexUsage(event)
+          if (usage) {
+            setCodexUsage(job, usage)
+          }
+
+          if (event.type === 'thread.started') {
+            pushCodexLiveLog(job, '线程已建立')
+            return
+          }
+
+          if (event.type === 'turn.started') {
+            pushCodexLiveLog(job, '面试官正在组织追问')
+            return
+          }
+
+          if (event.type === 'turn.completed') {
+            pushCodexLiveLog(job, '追问结构已生成')
+          }
+        },
+        onLogLine: (line, stream) => {
+          if (stream === 'stderr') {
+            pushCodexLiveLog(job, line)
+          }
+        },
+        onMessage: (text) => {
+          setCodexLiveText(job, extractInterviewerLivePreview(text))
+        },
         onSpawn: (child) => {
           this.running.set(jobId, child)
         },
@@ -672,6 +915,7 @@ export class InterviewerModeManager {
       job.summary = '面试官回合已返回'
       job.result = parsed
       job.finishedAt = new Date().toISOString()
+      publishCodexJob(job)
     } catch (error) {
       if (this.jobs.get(jobId)?.status === 'cancelled') {
         return
@@ -681,6 +925,8 @@ export class InterviewerModeManager {
       job.summary = '面试官模式失败'
       job.error = error instanceof Error ? error.message : String(error)
       job.finishedAt = new Date().toISOString()
+      pushCodexLiveLog(job, job.error)
+      publishCodexJob(job)
     } finally {
       this.running.delete(jobId)
     }
@@ -1081,6 +1327,9 @@ async function readPromptSkills(fileNames: string[]) {
 
 type RunCodexExecOptions = {
   model: string
+  onEvent?: (event: CodexJsonEvent) => void
+  onLogLine?: (line: string, stream: 'stderr' | 'stdout') => void
+  onMessage?: (text: string) => void
   onSpawn?: (child: ChildProcessWithoutNullStreams) => void
   outputFile: string
   prompt: string
@@ -1096,6 +1345,7 @@ async function runCodexExec(options: RunCodexExecOptions) {
       '--skip-git-repo-check',
       '--cd',
       ROOT_DIR,
+      '--json',
       '--output-schema',
       options.schemaPath,
       '--output-last-message',
@@ -1121,12 +1371,55 @@ async function runCodexExec(options: RunCodexExecOptions) {
     options.onSpawn?.(child)
 
     let stderr = ''
-    child.stdout.on('data', () => {})
+    let stdoutBuffer = ''
+    let stderrBuffer = ''
+
+    const flushBuffer = (buffer: string, stream: 'stderr' | 'stdout') => {
+      const lines = buffer.split(/\r?\n/)
+      const rest = lines.pop() ?? ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) {
+          continue
+        }
+        if (stream === 'stdout') {
+          try {
+            const event = JSON.parse(trimmed) as CodexJsonEvent
+            if (typeof event.type === 'string') {
+              options.onEvent?.(event)
+              const message = readAgentMessageText(event)
+              if (message) {
+                options.onMessage?.(message)
+              }
+              continue
+            }
+          } catch {
+            // Fall through to raw-line handling.
+          }
+        }
+        options.onLogLine?.(trimmed, stream)
+      }
+      return rest
+    }
+
+    child.stdout.on('data', (chunk) => {
+      stdoutBuffer += chunk.toString()
+      stdoutBuffer = flushBuffer(stdoutBuffer, 'stdout')
+    })
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
+      const text = chunk.toString()
+      stderr += text
+      stderrBuffer += text
+      stderrBuffer = flushBuffer(stderrBuffer, 'stderr')
     })
 
     child.on('close', async (code) => {
+      if (stdoutBuffer.trim()) {
+        flushBuffer(`${stdoutBuffer}\n`, 'stdout')
+      }
+      if (stderrBuffer.trim()) {
+        flushBuffer(`${stderrBuffer}\n`, 'stderr')
+      }
       if (code === null) {
         reject(new Error('codex terminated before producing output'))
         return

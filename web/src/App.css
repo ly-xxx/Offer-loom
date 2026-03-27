@@ -2011,6 +2011,7 @@
 
 .job-banner {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
   gap: 12px;
   margin-top: 14px;
@@ -2866,6 +2867,13 @@
 .console-markdown {
   color: var(--text);
   line-height: 1.75;
+}
+
+.console-markdown.live-preview {
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(246, 250, 252, 0.9);
+  border: 1px solid rgba(160, 188, 199, 0.22);
 }
 
 .console-markdown > :first-child {
@@ -3983,6 +3991,10 @@
   max-height: 320px;
 }
 
+.job-log-list.stream-log-list {
+  max-height: 164px;
+}
+
 .job-log-line {
   padding: 10px 12px;
   border-radius: 14px;
@@ -4035,6 +4047,15 @@
 .prompt-editor-card {
   display: grid;
   gap: 10px;
+}
+
+.job-live-preview {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(160, 188, 199, 0.22);
+  white-space: pre-wrap;
+  line-height: 1.65;
 }
 
 .prompt-editor-card textarea {

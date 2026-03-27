@@ -360,6 +360,21 @@ export function JobsDrawer(props: {
                 <div className="control-empty">这个任务类型没有可编辑 prompt。</div>
               )}
 
+              {'liveText' in props.selectedJob && props.selectedJob.liveText && (
+                <div className="prompt-editor-card">
+                  <span>实时输出</span>
+                  <div className="job-live-preview">{props.selectedJob.liveText}</div>
+                </div>
+              )}
+
+              {'liveLogs' in props.selectedJob && props.selectedJob.liveLogs && props.selectedJob.liveLogs.length > 0 && (
+                <div className="job-log-list tall">
+                  {props.selectedJob.liveLogs.slice(-24).map((line, index) => (
+                    <div key={`${props.selectedJob!.id}-live-log-${index}`} className="job-log-line">{line}</div>
+                  ))}
+                </div>
+              )}
+
               {'logs' in props.selectedJob && props.selectedJob.logs.length > 0 && (
                 <div className="job-log-list tall">
                   {props.selectedJob.logs.slice(-24).map((line, index) => (

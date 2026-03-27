@@ -27,12 +27,11 @@ import {
 
 import {
   cancelCodexConsoleJob,
-  fetchCodexConsoleJob,
+  subscribeAgentJobStream,
   startCodexConsoleJob
 } from './api'
 import { normalizeMarkdownForRender } from './markdown'
 import type {
-  CodexConsoleJob,
   CodexConsoleReply,
   DocumentData,
   DocumentListItem,
@@ -62,8 +61,11 @@ type ConsoleMessage =
       error?: string
       id: string
       jobId?: string
+      liveLogs?: string[]
+      liveText?: string
       reply?: CodexConsoleReply
       role: 'assistant'
+      summary?: string
       state: 'cancelled' | 'failed' | 'ready' | 'running'
     }
 
@@ -124,6 +126,7 @@ export function FloatingCodexWindow(props: Props) {
     startY: number
   }>(null)
   const currentJobRef = useRef<null | { jobId: string; messageId: string }>(null)
+  const jobStreamCleanupRef = useRef<null | (() => void)>(null)
   const messageEndRef = useRef<HTMLDivElement | null>(null)
   const deferredReferenceQuery = useDeferredValue(referenceQuery.trim().toLowerCase())
   const defaultFrame = useMemo(() => buildDefaultFloatFrame({
@@ -176,6 +179,13 @@ export function FloatingCodexWindow(props: Props) {
       setReferenceQuery('')
     }
   }, [isPickerOpen])
+
+  useEffect(() => {
+    return () => {
+      jobStreamCleanupRef.current?.()
+      jobStreamCleanupRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (!isOpen) {
@@ -376,7 +386,7 @@ export function FloatingCodexWindow(props: Props) {
         messageId: assistantMessageId
       }
       setRunningJobId(job.id)
-      await pollJob(job, assistantMessageId)
+      attachJobStream(job.id, assistantMessageId)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setMessages((current) => current.map((item) => (
@@ -393,48 +403,61 @@ export function FloatingCodexWindow(props: Props) {
     }
   }
 
-  const pollJob = async (job: CodexConsoleJob, messageId: string) => {
-    let latest = job
-    while (currentJobRef.current?.jobId === job.id) {
-      if (latest.status === 'ready') {
-        setMessages((current) => current.map((item) => (
-          item.id === messageId && item.role === 'assistant'
-            ? {
-                ...item,
-                jobId: job.id,
-                reply: latest.result,
-                state: 'ready'
-              }
-            : item
-        )))
-        setRunningJobId(null)
-        currentJobRef.current = null
+  const attachJobStream = (jobId: string, messageId: string) => {
+    jobStreamCleanupRef.current?.()
+    jobStreamCleanupRef.current = subscribeAgentJobStream(jobId, (incomingJob) => {
+      if (incomingJob.kind !== 'console' || currentJobRef.current?.jobId !== jobId) {
         return
       }
 
-      if (latest.status === 'failed' || latest.status === 'cancelled') {
-        const nextState = latest.status === 'cancelled' ? 'cancelled' : 'failed'
-        setMessages((current) => current.map((item) => (
-          item.id === messageId && item.role === 'assistant'
-            ? {
-                ...item,
-                error: latest.error,
-                jobId: job.id,
-                state: nextState
-              }
-            : item
-        )))
+      setMessages((current) => current.map((item) => {
+        if (item.id !== messageId || item.role !== 'assistant') {
+          return item
+        }
+
+        if (incomingJob.status === 'ready') {
+          return {
+            ...item,
+            jobId,
+            liveLogs: incomingJob.liveLogs,
+            liveText: incomingJob.liveText,
+            reply: incomingJob.result,
+            state: 'ready',
+            summary: incomingJob.summary
+          }
+        }
+
+        if (incomingJob.status === 'failed' || incomingJob.status === 'cancelled') {
+          return {
+            ...item,
+            error: incomingJob.error,
+            jobId,
+            liveLogs: incomingJob.liveLogs,
+            liveText: incomingJob.liveText,
+            state: incomingJob.status === 'cancelled' ? 'cancelled' : 'failed',
+            summary: incomingJob.summary
+          }
+        }
+
+        return {
+          ...item,
+          jobId,
+          liveLogs: incomingJob.liveLogs,
+          liveText: incomingJob.liveText,
+          state: 'running',
+          summary: incomingJob.summary
+        }
+      }))
+
+      if (incomingJob.status === 'ready' || incomingJob.status === 'failed' || incomingJob.status === 'cancelled') {
         setRunningJobId(null)
         currentJobRef.current = null
-        return
+        jobStreamCleanupRef.current?.()
+        jobStreamCleanupRef.current = null
+      } else {
+        setRunningJobId(jobId)
       }
-
-      await sleep(1200)
-      if (currentJobRef.current?.jobId !== job.id) {
-        return
-      }
-      latest = await fetchCodexConsoleJob(job.id)
-    }
+    })
   }
 
   const handleCancel = async () => {
@@ -443,6 +466,8 @@ export function FloatingCodexWindow(props: Props) {
       return
     }
 
+    jobStreamCleanupRef.current?.()
+    jobStreamCleanupRef.current = null
     currentJobRef.current = null
     setRunningJobId(null)
 
@@ -640,7 +665,21 @@ export function FloatingCodexWindow(props: Props) {
                       <article key={message.id} className="console-message assistant">
                         {message.state === 'running' ? (
                           <div className="console-assistant-card running">
-                            <span className="console-inline-status">Codex 正在整理并执行…</span>
+                            <span className="console-inline-status">{message.summary ?? 'Codex 正在整理并执行…'}</span>
+                            {message.liveText && (
+                              <div className="console-markdown live-preview">
+                                <ReactMarkdown rehypePlugins={[rehypeKatex]} remarkPlugins={[remarkGfm, remarkMath]}>
+                                  {normalizeMarkdownForRender(message.liveText)}
+                                </ReactMarkdown>
+                              </div>
+                            )}
+                            {message.liveLogs && message.liveLogs.length > 0 && (
+                              <div className="job-log-list stream-log-list">
+                                {message.liveLogs.slice(-4).map((line) => (
+                                  <div key={`${message.id}-${line}`} className="job-log-line">{line}</div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ) : message.state === 'ready' && message.reply ? (
                           <AssistantReplyCard reply={message.reply} />
@@ -990,10 +1029,4 @@ function framesEqual(left: FloatFrame, right: FloatFrame) {
     && left.width === right.width
     && left.x === right.x
     && left.y === right.y
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms)
-  })
 }

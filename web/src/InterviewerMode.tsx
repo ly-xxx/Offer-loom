@@ -16,11 +16,11 @@ import {
 
 import {
   cancelInterviewerJob,
-  fetchInterviewerJob,
+  subscribeAgentJobStream,
   startInterviewerJob
 } from './api'
 import { normalizeMarkdownForRender } from './markdown'
-import type { InterviewerJob, InterviewerReply } from './types'
+import type { InterviewerReply } from './types'
 import { OverlayDrawer } from './WorkspacePanels'
 
 type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -44,8 +44,11 @@ type InterviewerMessage =
       error?: string
       id: string
       jobId?: string
+      liveLogs?: string[]
+      liveText?: string
       reply?: InterviewerReply
       role: 'assistant'
+      summary?: string
       state: 'cancelled' | 'failed' | 'ready' | 'running'
     }
 
@@ -63,6 +66,7 @@ export function InterviewerModeDrawer(props: Props) {
   const [input, setInput] = useState('')
   const [runningJobId, setRunningJobId] = useState<string | null>(null)
   const currentJobRef = useRef<null | { jobId: string; messageId: string; sessionKey: string }>(null)
+  const jobStreamCleanupRef = useRef<null | (() => void)>(null)
   const messageEndRef = useRef<HTMLDivElement | null>(null)
   const sessionKeyRef = useRef<string | null>(null)
 
@@ -72,6 +76,13 @@ export function InterviewerModeDrawer(props: Props) {
       block: 'end'
     })
   }, [messages])
+
+  useEffect(() => {
+    return () => {
+      jobStreamCleanupRef.current?.()
+      jobStreamCleanupRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     const session = props.session
@@ -118,7 +129,7 @@ export function InterviewerModeDrawer(props: Props) {
         sessionKey: session.sessionKey
       }
       setRunningJobId(job.id)
-      await pollJob(job, messageId, session.sessionKey)
+      attachJobStream(job.id, messageId, session.sessionKey)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setMessages([{
@@ -174,7 +185,7 @@ export function InterviewerModeDrawer(props: Props) {
         sessionKey: session.sessionKey
       }
       setRunningJobId(job.id)
-      await pollJob(job, assistantMessageId, session.sessionKey)
+      attachJobStream(job.id, assistantMessageId, session.sessionKey)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setMessages((current) => current.map((item) => (
@@ -191,55 +202,66 @@ export function InterviewerModeDrawer(props: Props) {
     }
   }
 
-  const pollJob = async (job: InterviewerJob, messageId: string, sessionKey: string) => {
-    let latest = job
-    while (
-      currentJobRef.current?.jobId === job.id
-      && currentJobRef.current?.sessionKey === sessionKey
-      && sessionKeyRef.current === sessionKey
-    ) {
-      if (latest.status === 'ready') {
-        setMessages((current) => current.map((item) => (
-          item.id === messageId && item.role === 'assistant'
-            ? {
-                ...item,
-                jobId: job.id,
-                reply: latest.result,
-                state: 'ready'
-              }
-            : item
-        )))
-        setRunningJobId(null)
-        currentJobRef.current = null
-        return
-      }
-
-      if (latest.status === 'failed' || latest.status === 'cancelled') {
-        setMessages((current) => current.map((item) => (
-          item.id === messageId && item.role === 'assistant'
-            ? {
-                ...item,
-                error: latest.error,
-                jobId: job.id,
-                state: latest.status === 'cancelled' ? 'cancelled' : 'failed'
-              }
-            : item
-        )))
-        setRunningJobId(null)
-        currentJobRef.current = null
-        return
-      }
-
-      await sleep(1200)
+  const attachJobStream = (jobId: string, messageId: string, sessionKey: string) => {
+    jobStreamCleanupRef.current?.()
+    jobStreamCleanupRef.current = subscribeAgentJobStream(jobId, (incomingJob) => {
       if (
-        currentJobRef.current?.jobId !== job.id
+        incomingJob.kind !== 'interviewer'
+        || currentJobRef.current?.jobId !== jobId
         || currentJobRef.current?.sessionKey !== sessionKey
         || sessionKeyRef.current !== sessionKey
       ) {
         return
       }
-      latest = await fetchInterviewerJob(job.id)
-    }
+
+      setMessages((current) => current.map((item) => {
+        if (item.id !== messageId || item.role !== 'assistant') {
+          return item
+        }
+
+        if (incomingJob.status === 'ready') {
+          return {
+            ...item,
+            jobId,
+            liveLogs: incomingJob.liveLogs,
+            liveText: incomingJob.liveText,
+            reply: incomingJob.result,
+            state: 'ready',
+            summary: incomingJob.summary
+          }
+        }
+
+        if (incomingJob.status === 'failed' || incomingJob.status === 'cancelled') {
+          return {
+            ...item,
+            error: incomingJob.error,
+            jobId,
+            liveLogs: incomingJob.liveLogs,
+            liveText: incomingJob.liveText,
+            state: incomingJob.status === 'cancelled' ? 'cancelled' : 'failed',
+            summary: incomingJob.summary
+          }
+        }
+
+        return {
+          ...item,
+          jobId,
+          liveLogs: incomingJob.liveLogs,
+          liveText: incomingJob.liveText,
+          state: 'running',
+          summary: incomingJob.summary
+        }
+      }))
+
+      if (incomingJob.status === 'ready' || incomingJob.status === 'failed' || incomingJob.status === 'cancelled') {
+        setRunningJobId(null)
+        currentJobRef.current = null
+        jobStreamCleanupRef.current?.()
+        jobStreamCleanupRef.current = null
+      } else {
+        setRunningJobId(jobId)
+      }
+    })
   }
 
   const handleCancel = async () => {
@@ -248,6 +270,8 @@ export function InterviewerModeDrawer(props: Props) {
       return
     }
 
+    jobStreamCleanupRef.current?.()
+    jobStreamCleanupRef.current = null
     currentJobRef.current = null
     setRunningJobId(null)
     setMessages((current) => current.map((item) => (
@@ -353,7 +377,21 @@ export function InterviewerModeDrawer(props: Props) {
                     <article key={message.id} className="console-message assistant">
                       {message.state === 'running' ? (
                         <div className="console-assistant-card running interviewer-running-card">
-                          <span className="console-inline-status">面试官正在收紧问题边界…</span>
+                          <span className="console-inline-status">{message.summary ?? '面试官正在收紧问题边界…'}</span>
+                          {message.liveText && (
+                            <div className="console-markdown live-preview">
+                              <ReactMarkdown rehypePlugins={[rehypeKatex]} remarkPlugins={[remarkGfm, remarkMath]}>
+                                {normalizeMarkdownForRender(message.liveText)}
+                              </ReactMarkdown>
+                            </div>
+                          )}
+                          {message.liveLogs && message.liveLogs.length > 0 && (
+                            <div className="job-log-list stream-log-list">
+                              {message.liveLogs.slice(-4).map((line) => (
+                                <div key={`${message.id}-${line}`} className="job-log-line">{line}</div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ) : message.state === 'ready' && message.reply ? (
                         <InterviewerReplyCard reply={message.reply} />
@@ -505,10 +543,4 @@ function describePressureLevel(level: InterviewerReply['pressure_level']) {
     return '高压深挖'
   }
   return '开场施压'
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms)
-  })
 }
