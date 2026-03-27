@@ -1,15 +1,11 @@
-import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 export const ROOT_DIR = process.cwd()
 const DEFAULT_DB_PATH = path.join(ROOT_DIR, 'data', 'offerpotato.db')
-const LEGACY_DB_PATH = path.join(ROOT_DIR, 'data', 'offerloom.db')
-const configuredDbPath = process.env.OFFERPOTATO_DB_PATH ?? process.env.OFFERLOOM_DB_PATH
+const configuredDbPath = process.env.OFFERPOTATO_DB_PATH
 export const DB_PATH = configuredDbPath
   ? path.resolve(ROOT_DIR, configuredDbPath)
-  : !existsSync(DEFAULT_DB_PATH) && existsSync(LEGACY_DB_PATH)
-    ? LEGACY_DB_PATH
-    : DEFAULT_DB_PATH
+  : DEFAULT_DB_PATH
 export const WEB_DIST_DIR = path.join(ROOT_DIR, 'web', 'dist')
 export const SKILLS_DIR = path.join(ROOT_DIR, 'skills')
 export const SCHEMA_PATH = path.join(ROOT_DIR, 'schemas', 'answer-package.schema.json')

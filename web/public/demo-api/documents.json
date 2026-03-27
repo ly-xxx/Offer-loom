@@ -22,13 +22,13 @@
     "knowledgeHitCount": 6
   },
   {
-    "id": "doc-work-offerloom",
+    "id": "doc-work-offerpotato",
     "kind": "work",
     "ext": "md",
-    "path": "mywork/offerloom/architecture-notes.md",
-    "relPath": "offerloom/architecture-notes.md",
+    "path": "mywork/offerpotato/architecture-notes.md",
+    "relPath": "offerpotato/architecture-notes.md",
     "sourceId": "demo-mywork",
-    "title": "OfferLoom 架构笔记（Demo）",
+    "title": "OfferPotato 架构笔记（Demo）",
     "updatedAt": "2026-03-27T11:35:00.000Z",
     "knowledgeHitCount": 9
   },

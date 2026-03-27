@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_PATH="${OFFERPOTATO_SOURCES_CONFIG:-${OFFERLOOM_SOURCES_CONFIG:-$ROOT_DIR/config/sources.json}}"
-WORK_MANIFEST_PATH="${OFFERPOTATO_WORK_MANIFEST:-${OFFERLOOM_WORK_MANIFEST:-$ROOT_DIR/config/work-manifest.json}}"
+CONFIG_PATH="${OFFERPOTATO_SOURCES_CONFIG:-$ROOT_DIR/config/sources.json}"
+WORK_MANIFEST_PATH="${OFFERPOTATO_WORK_MANIFEST:-$ROOT_DIR/config/work-manifest.json}"
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
 cd "$ROOT_DIR"

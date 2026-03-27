@@ -37,7 +37,7 @@
       "full_answer_markdown": "运行时配置让你在不重建的前提下切 API/环境，适合静态托管和演示站。",
       "work_story": "Pages 发布时只替换 runtime-config.json 即可切 demo/prod 模式。",
       "work_evidence_status": "direct",
-      "work_evidence_note": "证据来自 OfferLoom 架构笔记（Demo） 与对应主线章节。",
+      "work_evidence_note": "证据来自 OfferPotato 架构笔记（Demo） 与对应主线章节。",
       "knowledge_map": [
         {
           "concept": "前端工程",
@@ -59,8 +59,8 @@
       },
       {
         "kind": "work",
-        "label": "OfferLoom 架构笔记（Demo）",
-        "path": "offerloom/architecture-notes.md"
+        "label": "OfferPotato 架构笔记（Demo）",
+        "path": "offerpotato/architecture-notes.md"
       }
     ],
     "outputMarkdown": "运行时配置让你在不重建的前提下切 API/环境，适合静态托管和演示站。"
@@ -85,12 +85,12 @@
   "workMatches": [
     {
       "id": "wm-demo-q-3",
-      "title": "OfferLoom 架构笔记（Demo）",
-      "path": "mywork/offerloom/architecture-notes.md",
-      "relPath": "offerloom/architecture-notes.md",
+      "title": "OfferPotato 架构笔记（Demo）",
+      "path": "mywork/offerpotato/architecture-notes.md",
+      "relPath": "offerpotato/architecture-notes.md",
       "score": 0.72,
       "meta": {
-        "project": "OfferLoom"
+        "project": "OfferPotato"
       }
     }
   ],

@@ -466,7 +466,7 @@ async function main() {
   let workEmbeddings = []
   let workChunkEmbeddings = []
 
-  if (process.env.OFFERPOTATO_DISABLE_EMBEDDINGS !== '1' && process.env.OFFERLOOM_DISABLE_EMBEDDINGS !== '1') {
+  if (process.env.OFFERPOTATO_DISABLE_EMBEDDINGS !== '1') {
     try {
       emitProgress('embedding_run', 0.58, '构建语义检索向量与分层索引')
       questionEmbeddings = await embedTexts(questions.map((question) => question.text))

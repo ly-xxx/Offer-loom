@@ -26,7 +26,7 @@ async function loadJson(path) {
 
 function renderHeader() {
   const config = state.config
-  $('#site-title').textContent = config.siteTitle || 'OfferLoom Demo'
+  $('#site-title').textContent = config.siteTitle || 'OfferPotato Demo'
   $('#site-subtitle').textContent = config.subtitle || '纯前端展示版'
   $('#demo-badge').textContent = config.demoBadge || 'Demo Mode'
   $('#last-updated').textContent = `更新时间: ${config.lastUpdated || '-'}`

@@ -49,12 +49,12 @@
       "relPath": "demo/rag-eval-and-ops.md"
     },
     {
-      "id": "s-demo-offerloom-1",
-      "documentId": "doc-work-offerloom",
-      "documentTitle": "OfferLoom 架构笔记（Demo）",
+      "id": "s-demo-offerpotato-1",
+      "documentId": "doc-work-offerpotato",
+      "documentTitle": "OfferPotato 架构笔记（Demo）",
       "heading": "GitHub Pages 演示模式",
       "content": "同构建产物 + runtime-config 切换 demoMode，写操作全部禁用，保证展示安全。",
-      "relPath": "offerloom/architecture-notes.md"
+      "relPath": "offerpotato/architecture-notes.md"
     },
     {
       "id": "s-demo-rag-ops-1",

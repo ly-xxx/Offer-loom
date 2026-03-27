@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-ALLOW_LIVE_REBUILD="${OFFERPOTATO_ALLOW_LIVE_REBUILD:-${OFFERLOOM_ALLOW_LIVE_REBUILD:-0}}"
+ALLOW_LIVE_REBUILD="${OFFERPOTATO_ALLOW_LIVE_REBUILD:-0}"
 
 if pgrep -f "node dist/server/index.js" >/dev/null 2>&1 && [[ "$ALLOW_LIVE_REBUILD" != "1" ]]; then
   echo "[OfferPotato] The site is currently running and holds the SQLite DB open."

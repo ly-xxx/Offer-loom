@@ -1,7 +1,7 @@
 {
-  "id": "proj-offerloom",
-  "name": "OfferLoom",
-  "rootPath": "mywork/offerloom",
+  "id": "proj-offerpotato",
+  "name": "OfferPotato",
+  "rootPath": "mywork/offerpotato",
   "status": "indexed",
   "summary": "面试准备工作台：文档、题库、项目证据三方联动，并支持 Pages 动态演示配置",
   "meta": {
@@ -10,7 +10,7 @@
     "stage": "production-like-demo"
   },
   "prep": {
-    "openingPitch": "OfferLoom 解决的是‘知道答案但不会讲项目落地’的问题：把主线学习文档、面经题库和 mywork 项目证据打通成一个可追溯的回答工作流。",
+    "openingPitch": "OfferPotato 解决的是‘知道答案但不会讲项目落地’的问题：把主线学习文档、面经题库和 mywork 项目证据打通成一个可追溯的回答工作流。",
     "interviewArc": [
       "问题背景：面试准备信息散落在教程、题库和个人项目里，难以串成故事",
       "方案设计：文档章节作为主线，题目作为注脚，mywork 作为证据层",
@@ -46,7 +46,7 @@
     ],
     "deepDiveQuestions": [
       {
-        "id": "dq-offerloom-1",
+        "id": "dq-offerpotato-1",
         "category": "architecture",
         "question": "为什么任务系统要拆成多种 job，而不是一个统一执行器？",
         "intent": "考察故障隔离与扩展策略",
@@ -54,7 +54,7 @@
         "sourceLabel": "architecture-notes.md"
       },
       {
-        "id": "dq-offerloom-2",
+        "id": "dq-offerpotato-2",
         "category": "frontend",
         "question": "GitHub Pages 无后端时，如何保证 demo 与主站 UI 一致？",
         "intent": "考察部署工程化能力",
@@ -62,7 +62,7 @@
         "sourceLabel": "architecture-notes.md"
       },
       {
-        "id": "dq-offerloom-3",
+        "id": "dq-offerpotato-3",
         "category": "retrieval",
         "question": "题目和章节的关联是如何避免强行匹配的？",
         "intent": "考察检索质量控制",
@@ -70,7 +70,7 @@
         "sourceLabel": "architecture-notes.md"
       },
       {
-        "id": "dq-offerloom-4",
+        "id": "dq-offerpotato-4",
         "category": "ops",
         "question": "Demo 数据更新后如何自动同步到线上展示页？",
         "intent": "考察发布链路完整性",
@@ -106,9 +106,9 @@
     ],
     "sourceDocuments": [
       {
-        "id": "doc-work-offerloom",
-        "title": "OfferLoom 架构笔记（Demo）",
-        "relPath": "offerloom/architecture-notes.md",
+        "id": "doc-work-offerpotato",
+        "title": "OfferPotato 架构笔记（Demo）",
+        "relPath": "offerpotato/architecture-notes.md",
         "ext": "md",
         "originKind": "work"
       }

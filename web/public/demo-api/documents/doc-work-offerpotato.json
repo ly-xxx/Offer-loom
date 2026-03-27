@@ -1,22 +1,22 @@
 {
-  "id": "doc-work-offerloom",
+  "id": "doc-work-offerpotato",
   "kind": "work",
   "ext": "md",
-  "path": "mywork/offerloom/architecture-notes.md",
-  "relPath": "offerloom/architecture-notes.md",
+  "path": "mywork/offerpotato/architecture-notes.md",
+  "relPath": "offerpotato/architecture-notes.md",
   "sourceId": "demo-mywork",
-  "title": "OfferLoom 架构笔记（Demo）",
+  "title": "OfferPotato 架构笔记（Demo）",
   "updatedAt": "2026-03-27T11:35:00.000Z",
   "watchPath": null,
   "meta": {
-    "project": "OfferLoom",
+    "project": "OfferPotato",
     "stage": "production-like-demo",
     "owner": "solo-builder"
   },
-  "content": "# OfferLoom 架构笔记\n\n## 背景与目标\n准备技术面试时，知识点和个人项目经验长期割裂。OfferLoom 的目标是把主线文档学习、面经题目训练、个人项目证据整理在一个工作台里完成。\n\n## 系统模块\nWeb 端采用 React + Vite，服务端采用 Node + SQLite。任务层拆分为 answer / console / interviewer / index 四类 Job，用于隔离延迟敏感链路与后台批处理。\n\n## 题目到证据的联动策略\n题目先关联主线章节，再关联 mywork 项目证据。关联流程采用语义召回 + 阈值筛选，低置信度仅展示为提示，不直接作为强引用。\n\n## GitHub Pages 演示模式\n线上演示复用同一套前端代码，部署时注入 runtime-config.json 切换 demoMode，所有写操作禁用，避免触发真实模型调用与 token 成本。\n\n## 故障与回滚记录（Demo）\n一次索引任务阻塞导致题目页加载变慢。处理方式是把 index Job 放到独立队列并增加超时熔断，恢复后题目详情页首屏 p95 从 1.6s 降到 0.9s。",
+  "content": "# OfferPotato 架构笔记\n\n## 背景与目标\n准备技术面试时，知识点和个人项目经验长期割裂。OfferPotato 的目标是把主线文档学习、面经题目训练、个人项目证据整理在一个工作台里完成。\n\n## 系统模块\nWeb 端采用 React + Vite，服务端采用 Node + SQLite。任务层拆分为 answer / console / interviewer / index 四类 Job，用于隔离延迟敏感链路与后台批处理。\n\n## 题目到证据的联动策略\n题目先关联主线章节，再关联 mywork 项目证据。关联流程采用语义召回 + 阈值筛选，低置信度仅展示为提示，不直接作为强引用。\n\n## GitHub Pages 演示模式\n线上演示复用同一套前端代码，部署时注入 runtime-config.json 切换 demoMode，所有写操作禁用，避免触发真实模型调用与 token 成本。\n\n## 故障与回滚记录（Demo）\n一次索引任务阻塞导致题目页加载变慢。处理方式是把 index Job 放到独立队列并增加超时熔断，恢复后题目详情页首屏 p95 从 1.6s 降到 0.9s。",
   "sections": [
     {
-      "anchor": "offerloom-background-goals",
+      "anchor": "offerpotato-background-goals",
       "heading": "背景与目标",
       "level": 2,
       "startLine": 3,
@@ -39,7 +39,7 @@
           "generated": {
             "elevator_pitch": "优先保证知识可追溯与更新效率。",
             "full_answer_markdown": "知识高频变化场景优先 RAG，兼顾可解释与更新效率。",
-            "work_story": "OfferLoom 选择可回溯引用链路，避免回答与材料脱节。",
+            "work_story": "OfferPotato 选择可回溯引用链路，避免回答与材料脱节。",
             "work_evidence_status": "adjacent",
             "follow_ups": ["什么时候会考虑微调？"],
             "missing_basics": []
@@ -48,7 +48,7 @@
       ]
     },
     {
-      "anchor": "offerloom-job-architecture",
+      "anchor": "offerpotato-job-architecture",
       "heading": "系统模块",
       "level": 2,
       "startLine": 8,
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "anchor": "offerloom-retrieval-linking",
+      "anchor": "offerpotato-retrieval-linking",
       "heading": "题目到证据的联动策略",
       "level": 2,
       "startLine": 13,
@@ -112,7 +112,7 @@
       ]
     },
     {
-      "anchor": "offerloom-pages-demo-mode",
+      "anchor": "offerpotato-pages-demo-mode",
       "heading": "GitHub Pages 演示模式",
       "level": 2,
       "startLine": 18,
@@ -144,7 +144,7 @@
       ]
     },
     {
-      "anchor": "offerloom-incident-rollback",
+      "anchor": "offerpotato-incident-rollback",
       "heading": "故障与回滚记录（Demo）",
       "level": 2,
       "startLine": 23,

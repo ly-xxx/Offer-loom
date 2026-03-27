@@ -5,9 +5,9 @@
 # OfferPotato
 
 <p align="center">
-  <a href="https://github.com/ly-xxx/Offer-loom/stargazers"><img src="https://img.shields.io/github/stars/ly-xxx/Offer-loom?style=flat-square" alt="GitHub stars" /></a>
-  <a href="https://github.com/ly-xxx/Offer-loom/network/members"><img src="https://img.shields.io/github/forks/ly-xxx/Offer-loom?style=flat-square" alt="GitHub forks" /></a>
-  <a href="https://github.com/ly-xxx/Offer-loom/issues"><img src="https://img.shields.io/github/issues/ly-xxx/Offer-loom?style=flat-square" alt="GitHub issues" /></a>
+  <a href="https://github.com/ly-xxx/Offer-Potato/stargazers"><img src="https://img.shields.io/github/stars/ly-xxx/Offer-Potato?style=flat-square" alt="GitHub stars" /></a>
+  <a href="https://github.com/ly-xxx/Offer-Potato/network/members"><img src="https://img.shields.io/github/forks/ly-xxx/Offer-Potato?style=flat-square" alt="GitHub forks" /></a>
+  <a href="https://github.com/ly-xxx/Offer-Potato/issues"><img src="https://img.shields.io/github/issues/ly-xxx/Offer-Potato?style=flat-square" alt="GitHub issues" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-16a34a?style=flat-square" alt="MIT license" /></a>
 </p>
 
@@ -93,8 +93,8 @@ OfferPotato is not limited to LLM interviews. The same pattern works for any dom
 Even if you have not prepared your own data yet, you can still clone the repo and explore the built-in public examples first.
 
 ```bash
-git clone https://github.com/ly-xxx/Offer-loom.git
-cd Offer-loom
+git clone https://github.com/ly-xxx/Offer-Potato.git
+cd Offer-Potato
 npm install
 npm run setup:serve
 ```
@@ -289,10 +289,10 @@ Before publishing or sharing the repo, read:
 
 ## Star History
 
-<a href="https://www.star-history.com/#ly-xxx/Offer-loom&Date">
+<a href="https://www.star-history.com/#ly-xxx/Offer-Potato&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ly-xxx/Offer-loom&type=Date" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-Potato&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ly-xxx/Offer-Potato&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ly-xxx/Offer-Potato&type=Date" />
   </picture>
 </a>

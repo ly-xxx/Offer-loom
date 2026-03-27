@@ -11,7 +11,7 @@ import {
   type OfferPotatoSourcesConfig
 } from './runtimeConfig.js'
 
-const INDEX_PROGRESS_PREFIXES = ['[OfferPotatoProgress]', '[OfferLoomProgress]']
+const INDEX_PROGRESS_PREFIXES = ['[OfferPotatoProgress]']
 
 type IndexJobStage =
   | 'queued'
@@ -157,7 +157,6 @@ export class IndexJobManager {
       await this.runNodeScript(jobId, 'build-db.mjs', {
         env: {
           OFFERPOTATO_DB_PATH: tempDbPath,
-          OFFERLOOM_DB_PATH: tempDbPath
         },
         onLine: (line) => {
           const progressEvent = parseProgressEvent(line)

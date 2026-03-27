@@ -1,8 +1,8 @@
 [
   {
-    "id": "proj-offerloom",
-    "name": "OfferLoom",
-    "rootPath": "mywork/offerloom",
+    "id": "proj-offerpotato",
+    "name": "OfferPotato",
+    "rootPath": "mywork/offerpotato",
     "status": "indexed",
     "summary": "面试准备工作台：文档、题库、项目证据三方联动，并支持 Pages 动态演示配置",
     "meta": {
