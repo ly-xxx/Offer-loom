@@ -144,6 +144,12 @@ export type WorkMatch = {
   title: string
 }
 
+export type CodexUsage = {
+  cachedInputTokens?: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
 export type GeneratedAnswer = {
   citations: Array<{ kind: string; label: string; path: string }>
   id: string
@@ -333,6 +339,8 @@ export type JobStatus = {
   finishedAt?: string
   id: string
   kind: 'answer'
+  liveLogs?: string[]
+  liveText?: string
   model: string
   promptPreview?: string
   questionId: string
@@ -343,6 +351,8 @@ export type JobStatus = {
   startedAt: string
   status: 'cancelled' | 'queued' | 'running' | 'ready' | 'failed'
   summary?: string
+  updatedAt?: string
+  usage?: CodexUsage
 }
 
 export type CodexConsoleReply = {
@@ -368,6 +378,8 @@ export type CodexConsoleJob = {
   finishedAt?: string
   id: string
   kind?: 'console'
+  liveLogs?: string[]
+  liveText?: string
   messagePreview?: string
   model: string
   promptPreview?: string
@@ -377,6 +389,8 @@ export type CodexConsoleJob = {
   startedAt: string
   status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
   summary?: string
+  updatedAt?: string
+  usage?: CodexUsage
 }
 
 export type InterviewerJob = {
@@ -384,6 +398,8 @@ export type InterviewerJob = {
   finishedAt?: string
   id: string
   kind?: 'interviewer'
+  liveLogs?: string[]
+  liveText?: string
   messagePreview?: string
   model: string
   promptPreview?: string
@@ -396,6 +412,8 @@ export type InterviewerJob = {
   startedAt: string
   status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
   summary?: string
+  updatedAt?: string
+  usage?: CodexUsage
 }
 
 export type IndexJobStatus = {
@@ -414,6 +432,7 @@ export type IndexJobStatus = {
   startedAt: string
   status: 'cancelled' | 'failed' | 'queued' | 'ready' | 'running'
   summary: string
+  updatedAt?: string
 }
 
 export type AgentJob =
